@@ -10,8 +10,10 @@ from datetime import datetime
 from typing import Optional, Union
 from zoneinfo import ZoneInfo
 
+from alpaca.trading.enums import OrderClass, PositionIntent
 from alpaca.trading.requests import (
     LimitOrderRequest,
+    OptionLegRequest,
     OrderSide,
     TimeInForce,
 )
@@ -391,37 +393,44 @@ def _fetch_options_chain(secret_name: str,
 
 
 def _submit_orders(secret_name: str, position: SpreadPosition) -> bool:
-    """Submit leg orders to Alpaca as individual limit orders.
+    """Submit a multi-leg order to Alpaca.
 
-    In paper trading, we submit individual legs. For production,
-    this should be replaced with multi-leg order support.
+    Uses OrderClass.MLEG for atomic fill -- the entire spread fills
+    or nothing does. limit_price is negative for credit spreads.
     """
     try:
         trading_client = create_trading_client(secret_name)
         today_str = datetime.now(ET).strftime("%y%m%d")
         legs = position.get_legs()
 
+        option_legs = []
         for leg in legs:
-            option_type_char = "C" if leg.option_type == "call" else "P"
-            symbol = f"SPY{today_str}{option_type_char}{int(leg.strike):08d}"
+            opt_char = "C" if leg.option_type == "call" else "P"
+            symbol = f"SPY{today_str}{opt_char}{int(leg.strike):08d}"
 
-            side = OrderSide.SELL if leg.side == "sell" else OrderSide.BUY
-            limit_price = leg.fill_price
+            intent = (PositionIntent.SELL_TO_OPEN if leg.side == "sell"
+                      else PositionIntent.BUY_TO_OPEN)
 
-            order_request = LimitOrderRequest(
+            option_legs.append(OptionLegRequest(
                 symbol=symbol,
-                qty=leg.quantity,
-                side=side,
-                time_in_force=TimeInForce.DAY,
-                limit_price=limit_price,
-            )
+                ratio_qty=leg.quantity,
+                position_intent=intent,
+            ))
 
-            order = trading_client.submit_order(order_request)
-            logger.info(
-                f"Submitted {leg.side} {leg.option_type} {leg.strike}: "
-                f"order_id={order.id}"
-            )
+        # Negative limit_price = credit received
+        order_request = LimitOrderRequest(
+            order_class=OrderClass.MLEG,
+            qty=1,
+            limit_price=-position.net_credit,
+            time_in_force=TimeInForce.DAY,
+            legs=option_legs,
+        )
 
+        order = trading_client.submit_order(order_request)
+        logger.info(
+            f"Submitted MLEG order: {position.spread_type} "
+            f"credit={position.net_credit} order_id={order.id}"
+        )
         return True
 
     except Exception as e:

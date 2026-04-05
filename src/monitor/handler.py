@@ -214,32 +214,52 @@ def _close_position(position: SpreadPosition, reason: str,
 
 
 def _submit_close_orders(secret_name: str, position: SpreadPosition) -> bool:
-    """Submit closing orders (reverse of opening orders)."""
+    """Submit a multi-leg closing order (reverse of opening).
+
+    Uses OrderClass.MLEG for atomic fill. limit_price is positive
+    (debit) since we're buying back the spread.
+    """
     try:
-        from alpaca.trading.requests import LimitOrderRequest, OrderSide, TimeInForce
+        from alpaca.trading.enums import OrderClass, PositionIntent
+        from alpaca.trading.requests import (
+            LimitOrderRequest, OptionLegRequest, TimeInForce,
+        )
 
         trading_client = create_trading_client(secret_name)
         legs = position.get_legs()
         today_str = datetime.now(ET).strftime("%y%m%d")
 
+        option_legs = []
         for leg in legs:
             opt_char = "C" if leg.option_type == "call" else "P"
             symbol = f"SPY{today_str}{opt_char}{int(leg.strike):08d}"
 
-            # Reverse: if we sold, now buy to close; if we bought, now sell to close
-            close_side = OrderSide.BUY if leg.side == "sell" else OrderSide.SELL
+            # Reverse: sell->buy_to_close, buy->sell_to_close
+            intent = (PositionIntent.BUY_TO_CLOSE if leg.side == "sell"
+                      else PositionIntent.SELL_TO_CLOSE)
 
-            order_request = LimitOrderRequest(
+            option_legs.append(OptionLegRequest(
                 symbol=symbol,
-                qty=leg.quantity,
-                side=close_side,
-                time_in_force=TimeInForce.DAY,
-                limit_price=leg.current_price,
-            )
-            order = trading_client.submit_order(order_request)
-            logger.info(f"Close order {leg.side}->{close_side.value} {symbol}: {order.id}")
+                ratio_qty=leg.quantity,
+                position_intent=intent,
+            ))
 
+        # Positive limit_price = debit paid to close
+        order_request = LimitOrderRequest(
+            order_class=OrderClass.MLEG,
+            qty=1,
+            limit_price=position.current_value,
+            time_in_force=TimeInForce.DAY,
+            legs=option_legs,
+        )
+
+        order = trading_client.submit_order(order_request)
+        logger.info(
+            f"Submitted MLEG close: {position.spread_type} "
+            f"debit={position.current_value} order_id={order.id}"
+        )
         return True
+
     except Exception as e:
         logger.error(f"Failed to submit close orders: {e}")
         return False
