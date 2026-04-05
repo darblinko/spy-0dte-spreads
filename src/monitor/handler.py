@@ -38,6 +38,13 @@ def handler(event: dict, context) -> dict:
     Returns:
         Dict with monitor results: positions checked, closed, still open.
     """
+    # Guard: only run during market hours (9:35 AM - 4:00 PM ET)
+    now_et = datetime.now(ET)
+    market_start = now_et.replace(hour=9, minute=35, second=0, microsecond=0)
+    market_end = now_et.replace(hour=16, minute=0, second=0, microsecond=0)
+    if not (market_start <= now_et <= market_end):
+        return {"skipped": True, "reason": "outside_market_hours"}
+
     try:
         return _monitor(event)
     except Exception as e:

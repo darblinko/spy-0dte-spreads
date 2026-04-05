@@ -3,6 +3,7 @@
 from aws_cdk import (
     Stack, Duration, Size,
     aws_lambda as _lambda,
+    aws_iam as iam,
 )
 from constructs import Construct
 
@@ -117,3 +118,13 @@ class ComputeStack(Stack):
             storage.bucket.grant_read_write(fn)
             observability.trade_topic.grant_publish(fn)
             observability.error_topic.grant_publish(fn)
+
+            # Secrets Manager access for Alpaca API credentials
+            fn.add_to_role_policy(
+                iam.PolicyStatement(
+                    actions=["secretsmanager:GetSecretValue"],
+                    resources=[
+                        f"arn:aws:secretsmanager:{self.region}:{self.account}:secret:premium/*",
+                    ],
+                )
+            )
