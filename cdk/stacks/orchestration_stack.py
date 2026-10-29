@@ -1,11 +1,12 @@
 """Step Functions workflow and EventBridge Scheduler for premium-selling.
 
-Workflow:
-1. Scanner (10:00 AM) -> detects regime, returns scan result
-2. If should_trade: Executor -> builds spread, submits orders
-3. Monitor loop every 5 min (9:35 AM - 3:44 PM) -> checks P&L thresholds
-4. Closer (3:45 PM) -> force close all positions
-5. Reconciler (4:15 PM) -> daily summary to S3
+Schedule (US Eastern, Monday to Friday unless noted):
+1. 10:00: the entry workflow runs the scanner for each strategy, which detects the regime.
+2. If the scanner returns should_trade, the executor builds the spread and submits the order.
+3. Every 5 minutes, every day: the monitor workflow checks open positions against the
+   thresholds. The monitor handler skips runs outside 9:35 to 16:00.
+4. 15:45: the closer closes all open positions.
+5. 16:15: the reconciler writes the daily summary to S3.
 """
 
 from aws_cdk import (
@@ -174,7 +175,7 @@ class OrchestrationStack(Stack):
         compute.closer_fn.grant_invoke(scheduler_role)
         compute.reconciler_fn.grant_invoke(scheduler_role)
 
-        # Entry: 10:00 AM ET -- scan market + execute trades
+        # Entry: 10:00 ET, scan the market and execute trades
         scheduler.CfnSchedule(
             self,
             "EntrySchedule",
@@ -191,10 +192,8 @@ class OrchestrationStack(Stack):
             state="ENABLED",
         )
 
-        # Monitor: every 5 min from 10:05 AM to 3:40 PM ET (67 invocations)
-        # Cron can't do "every 5 min within a window", so use rate-based
-        # with a Step Functions guard. For now: run every 5 min, the monitor
-        # Lambda itself is idempotent and cheap when no positions exist.
+        # Monitor: rate based, every 5 minutes. The monitor handler returns early outside
+        # market hours, and a run with no open positions makes no broker calls.
         scheduler.CfnSchedule(
             self,
             "MonitorSchedule",
@@ -210,7 +209,7 @@ class OrchestrationStack(Stack):
             state="ENABLED",
         )
 
-        # Closer: 3:45 PM ET -- force close all positions
+        # Closer: 15:45 ET, force close all positions
         scheduler.CfnSchedule(
             self,
             "CloserSchedule",
@@ -227,7 +226,7 @@ class OrchestrationStack(Stack):
             state="ENABLED",
         )
 
-        # Reconciler: 4:15 PM ET -- daily summary
+        # Reconciler: 16:15 ET, daily summary
         scheduler.CfnSchedule(
             self,
             "ReconcilerSchedule",

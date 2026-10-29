@@ -7,12 +7,12 @@ def compute_expected_move(
     """Calculate the expected move from ATM straddle price.
 
     The expected move approximation is the ATM straddle price * multiplier.
-    Tastylive convention uses 0.85 as the multiplier.
+    This module uses 0.85 as the default multiplier.
 
     Args:
         atm_call_price: Price of ATM call option.
         atm_put_price: Price of ATM put option.
-        multiplier: Adjustment factor (default 0.85 per tastylive convention).
+        multiplier: Adjustment factor (default 0.85).
 
     Returns:
         Expected move in points (e.g., 3.5 means +/- $3.50 on SPY).

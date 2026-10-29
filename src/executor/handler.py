@@ -248,7 +248,7 @@ def _compute_risk_levels(
         take_profit_pct: Take profit at this fraction of credit received.
 
     Returns:
-        (stop_loss_price, take_profit_price) -- spread value thresholds.
+        (stop_loss_price, take_profit_price), the spread value thresholds.
     """
     stop_loss = round(net_credit * stop_loss_multiplier, 4)
     take_profit = round(net_credit * take_profit_pct, 4)
@@ -419,7 +419,7 @@ def _fetch_options_chain(
 def _submit_orders(secret_name: str, position: SpreadPosition) -> bool:
     """Submit a multi-leg order to Alpaca.
 
-    Uses OrderClass.MLEG for atomic fill -- the entire spread fills
+    Uses OrderClass.MLEG for an atomic fill: the entire spread fills
     or nothing does. limit_price is negative for credit spreads.
     """
     try:

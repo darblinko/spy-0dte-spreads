@@ -30,9 +30,9 @@ def build_credit_spread(
 ) -> CreditSpreadResult | None:
     """Build a directional credit spread based on market regime.
 
-    Uptrend -> sell put credit spread (bullish: collect credit below market).
-    Downtrend -> sell call credit spread (bearish: collect credit above market).
-    Range/Uncertain -> returns None (use iron condor instead).
+    Uptrend: sell a put credit spread (bullish, collect credit below market).
+    Downtrend: sell a call credit spread (bearish, collect credit above market).
+    Range or uncertain: return None (the iron condor covers range days).
 
     Args:
         regime: Current market regime classification.

@@ -1,6 +1,6 @@
 """Monitor Lambda: poll open positions and check stop loss / take profit.
 
-Runs every 5 minutes via Step Functions between 9:35 AM and 4:15 PM ET.
+Runs every 5 minutes via Step Functions and returns early outside 9:35 to 16:00 ET.
 Fetches current option prices, updates unrealized P&L, and triggers
 closes when thresholds are breached.
 """
@@ -37,7 +37,7 @@ def handler(event: dict, context) -> dict:
     Returns:
         Dict with monitor results: positions checked, closed, still open.
     """
-    # Guard: only run during market hours (9:35 AM - 4:00 PM ET)
+    # Guard: only run during market hours (9:35 to 16:00 ET)
     now_et = datetime.now(ET)
     market_start = now_et.replace(hour=9, minute=35, second=0, microsecond=0)
     market_end = now_et.replace(hour=16, minute=0, second=0, microsecond=0)
@@ -235,7 +235,7 @@ def _submit_close_orders(secret_name: str, position: SpreadPosition) -> bool:
             opt_char = "C" if leg.option_type == "call" else "P"
             symbol = f"SPY{today_str}{opt_char}{int(leg.strike):08d}"
 
-            # Reverse: sell->buy_to_close, buy->sell_to_close
+            # Reverse each leg: a sold leg is bought to close, a bought leg is sold to close
             intent = (
                 PositionIntent.BUY_TO_CLOSE if leg.side == "sell" else PositionIntent.SELL_TO_CLOSE
             )

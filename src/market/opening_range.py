@@ -48,9 +48,9 @@ def classify_or_breakout(current_price: float, opening_range: OpeningRange) -> s
     """Classify whether price has broken out of the opening range.
 
     Returns:
-        "above" — price broke above OR high (bullish)
-        "below" — price broke below OR low (bearish)
-        "inside" — price still within OR
+        "above": price broke above OR high (bullish)
+        "below": price broke below OR low (bearish)
+        "inside": price still within OR
     """
     if current_price > opening_range.high:
         return "above"
