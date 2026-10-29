@@ -110,7 +110,6 @@ class SpreadPosition:
     def from_dynamo_item(cls, item: dict) -> "SpreadPosition":
         """Deserialize from DynamoDB item."""
         kwargs = {}
-        field_names = {f.name for f in fields(cls)}
         for f in fields(cls):
             if f.name not in item:
                 continue

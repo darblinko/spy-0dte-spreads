@@ -1,7 +1,7 @@
 """DynamoDB operations for spread positions, trades, and market state."""
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import boto3
@@ -53,7 +53,7 @@ def put_position(table_name: str, position: SpreadPosition) -> None:
     table = _get_table(table_name)
     item = position.to_dynamo_item()
     item["strategy"] = position.strategy
-    item["updated_at"] = datetime.utcnow().isoformat()
+    item["updated_at"] = datetime.now(UTC).isoformat()
     table.put_item(Item=_sanitize_item(item))
     logger.info(f"Saved position: {position.strategy}/{position.spread_id}")
 
@@ -109,7 +109,7 @@ def get_trades_for_date(table_name: str, strategy: str, trade_date: str) -> list
 def put_market_state(table_name: str, date_str: str, state: dict) -> None:
     """Store market regime state for a given timestamp."""
     table = _get_table(table_name)
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
     item = {
         "date": date_str,
         "timestamp": now.isoformat(),

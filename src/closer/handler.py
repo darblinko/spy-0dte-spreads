@@ -73,5 +73,5 @@ def _try_error_alert(source: str, error: str) -> None:
     try:
         topic = get_sns_error_topic()
         publish_error_alert(topic, source, error)
-    except Exception:
+    except Exception:  # noqa: BLE001 alerting must not mask the original error
         logger.warning("Failed to publish error alert")

@@ -134,13 +134,13 @@ class TestBuildSpreadForRegime:
 
 class TestComputeRiskLevels:
     def test_stop_loss_is_double_credit(self):
-        stop, take = _compute_risk_levels(
+        stop, _take = _compute_risk_levels(
             net_credit=0.50, stop_loss_multiplier=2.0, take_profit_pct=0.50
         )
         assert stop == pytest.approx(1.0)
 
     def test_take_profit_is_half_credit(self):
-        stop, take = _compute_risk_levels(
+        _stop, take = _compute_risk_levels(
             net_credit=0.50, stop_loss_multiplier=2.0, take_profit_pct=0.50
         )
         assert take == pytest.approx(0.25)

@@ -73,7 +73,7 @@ def _scan(config, strategy_name: str) -> dict:
     trading_client = create_trading_client(config.secret_name)
 
     # Gate: market must be open
-    market_open, clock = is_market_open(trading_client)
+    market_open, _clock = is_market_open(trading_client)
     if not market_open:
         return _no_trade(strategy_name, "market_closed")
 
@@ -176,7 +176,7 @@ def _fetch_vix() -> float:
             logger.warning("VIX data empty, defaulting to 20.0")
             return 20.0
         return float(hist["Close"].iloc[-1])
-    except Exception:
+    except Exception:  # noqa: BLE001 any data source failure falls back to the default
         logger.warning("Failed to fetch VIX, defaulting to 20.0")
         return 20.0
 
@@ -206,7 +206,7 @@ def _fetch_expected_move(secret_name: str, spy_price: float) -> float:
         put_mid = (quotes[put_symbol].bid_price + quotes[put_symbol].ask_price) / 2
 
         return compute_expected_move(call_mid, put_mid)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 any quote failure falls back to the estimate
         logger.warning(f"Failed to fetch ATM straddle, using VIX estimate: {e}")
         # Fallback: VIX-based daily expected move = price * VIX/100 / sqrt(252)
         return spy_price * 0.01  # ~1% as rough fallback
@@ -231,7 +231,7 @@ def _save_market_state(
             "candle_body_ratio": regime.signals.candle_body_ratio,
         }
         put_market_state(table, date_str, state)
-    except Exception:
+    except Exception:  # noqa: BLE001 the state record is diagnostic; the scan continues
         logger.warning("Failed to save market state, continuing")
 
 
@@ -264,5 +264,5 @@ def _try_error_alert(strategy_name: str, error: str) -> None:
     try:
         topic = get_sns_error_topic()
         publish_error_alert(topic, f"scanner/{strategy_name}", error)
-    except Exception:
+    except Exception:  # noqa: BLE001 alerting must not mask the original error
         logger.warning("Failed to publish error alert")

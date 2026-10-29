@@ -390,7 +390,7 @@ def _fetch_options_chain(
                 continue
 
             quote = OptionQuote(
-                strike=float(symbol[-8:]) if "P" in symbol else float(symbol[-8:]),
+                strike=float(symbol[-8:]),
                 delta=snap.greeks.delta if snap.greeks.delta else 0.0,
                 bid=snap.latest_quote.bid_price or 0.0,
                 ask=snap.latest_quote.ask_price or 0.0,
@@ -411,8 +411,8 @@ def _fetch_options_chain(
         logger.info(f"Fetched chain: {len(put_chain)} puts, {len(call_chain)} calls")
         return put_chain, call_chain
 
-    except Exception as e:
-        logger.error(f"Failed to fetch options chain: {e}")
+    except Exception:
+        logger.exception("Failed to fetch options chain")
         return [], []
 
 
@@ -460,8 +460,8 @@ def _submit_orders(secret_name: str, position: SpreadPosition) -> bool:
         )
         return True
 
-    except Exception as e:
-        logger.error(f"Order submission failed: {e}")
+    except Exception:
+        logger.exception("Order submission failed")
         return False
 
 
@@ -469,5 +469,5 @@ def _try_error_alert(strategy_name: str, error: str) -> None:
     try:
         topic = get_sns_error_topic()
         publish_error_alert(topic, f"executor/{strategy_name}", error)
-    except Exception:
+    except Exception:  # noqa: BLE001 alerting must not mask the original error
         logger.warning("Failed to publish error alert")

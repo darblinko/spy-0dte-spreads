@@ -140,7 +140,7 @@ def _send_daily_report(summary: dict) -> None:
             Subject=f"Premium Daily: {pnl_str} ({summary['date']})",
             Message=message,
         )
-    except Exception:
+    except Exception:  # noqa: BLE001 the summary is already in S3; the report is best effort
         logger.warning("Failed to send daily report")
 
 
@@ -148,5 +148,5 @@ def _try_error_alert(source: str, error: str) -> None:
     try:
         topic = get_sns_error_topic()
         publish_error_alert(topic, source, error)
-    except Exception:
+    except Exception:  # noqa: BLE001 alerting must not mask the original error
         logger.warning("Failed to publish error alert")

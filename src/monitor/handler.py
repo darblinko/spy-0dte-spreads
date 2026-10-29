@@ -136,8 +136,8 @@ def _update_position_prices(secret_name: str, position: SpreadPosition) -> Sprea
 
         return position
 
-    except Exception as e:
-        logger.error(f"Failed to update prices for {position.spread_id}: {e}")
+    except Exception:
+        logger.exception(f"Failed to update prices for {position.spread_id}")
         return None
 
 
@@ -206,7 +206,7 @@ def _close_position(position: SpreadPosition, reason: str, secret_name: str) -> 
             position.unrealized_pnl,
             position.underlying,
         )
-    except Exception:
+    except Exception:  # noqa: BLE001 the close is recorded; the alert is best effort
         logger.warning("Failed to send close notification")
 
     logger.info(f"Closed {position.spread_id}: reason={reason} pnl={position.unrealized_pnl:.2f}")
@@ -264,8 +264,8 @@ def _submit_close_orders(secret_name: str, position: SpreadPosition) -> bool:
         )
         return True
 
-    except Exception as e:
-        logger.error(f"Failed to submit close orders: {e}")
+    except Exception:
+        logger.exception("Failed to submit close orders")
         return False
 
 
@@ -273,5 +273,5 @@ def _try_error_alert(source: str, error: str) -> None:
     try:
         topic = get_sns_error_topic()
         publish_error_alert(topic, source, error)
-    except Exception:
+    except Exception:  # noqa: BLE001 alerting must not mask the original error
         logger.warning("Failed to publish error alert")
