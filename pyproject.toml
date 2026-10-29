@@ -1,6 +1,10 @@
 [project]
 name = "premium-selling"
 version = "0.1.0"
+description = "Same-day SPY option spread system on AWS Lambda, Step Functions and CDK"
+readme = "README.md"
+license = "Apache-2.0"
+authors = [{ name = "Mitchell Foutz" }]
 requires-python = "==3.12.*"
 dependencies = [
     "alpaca-py>=0.43.0",

@@ -7,6 +7,7 @@ build/
 *.egg
 .env
 .env.*
+!.env.example
 .venv/
 venv/
 *.parquet
@@ -18,3 +19,4 @@ node_modules/
 .idea/
 .vscode/
 .claude/
+.ruff_cache/
