@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>premium-selling</title>
+  <meta name="description" content="Same-day SPY option spread system on AWS Lambda, Step Functions and CDK.">
+  <link rel="icon" href="data:,">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono&family=IBM+Plex+Sans:wght@400;600&display=swap">
+  <link rel="stylesheet" href="site.css">
+</head>
+<body>
+  <header class="site-bar">
+    <a href="https://darblinko.github.io/">Mitchell Foutz</a>
+    <a href="https://github.com/darblinko/spy-0dte-spreads">Source on GitHub</a>
+  </header>
+
+  <main>
+    <section class="intro">
+      <h1>premium-selling</h1>
+      <p class="lede">A same-day SPY option spread system on AWS: a morning regime check, spread entry, position checks every 5 minutes, a forced close at 15:45 Eastern and an end-of-day summary, each as a scheduled Lambda function.</p>
+      <dl class="record">
+        <div><dt>Repository</dt><dd>darblinko/spy-0dte-spreads</dd></div>
+        <div><dt>Revision</dt><dd><code>4b1dc2f</code></dd></div>
+        <div><dt>Measured</dt><dd>2026-10-28</dd></div>
+        <div><dt>License</dt><dd>Apache-2.0</dd></div>
+      </dl>
+    </section>
+
+    <section>
+      <h2>Problem</h2>
+      <p>A same-day options position has to be watched from entry until it is closed. In this system that is from 10:00 to 15:45 Eastern, with a check every 5 minutes against a stop at 2 times the credit received and a take profit at half of it. A missed check leaves a position past its threshold.</p>
+      <p>This repository runs each step on a schedule in AWS. Positions and trades are kept in DynamoDB, every open position is closed at 15:45, and the handlers send trade and error alerts over SNS.</p>
+      <aside class="note">
+        <p>Schedules: <code>cdk/stacks/orchestration_stack.py</code>. Thresholds: <code>src/common/config.py</code>, <code>src/monitor/handler.py</code>.</p>
+      </aside>
+    </section>
+
+    <section>
+      <h2>How it works</h2>
+      <p>The entry workflow runs the scanner for both strategies in parallel and calls the executor when the detected regime matches: an iron condor on range days, a credit spread with the trend on trend days. A second workflow runs the monitor. The closer and the reconciler are invoked by the scheduler directly.</p>
+      <pre class="mermaid">
+flowchart TB
+  sched["EventBridge Scheduler&lt;br/&gt;America/New_York"]
+  subgraph entry["Entry state machine, 10:00"]
+    scanIC["Scanner IC_SPY"] --> execIC["Executor&lt;br/&gt;iron condor"]
+    scanCS["Scanner CS_SPY"] --> execCS["Executor&lt;br/&gt;credit spread"]
+  end
+  subgraph monitorSm["Monitor, every 5 min"]
+    monitor["Monitor"]
+  end
+  closer["Closer, 15:45"]
+  recon["Reconciler, 16:15"]
+  sched --> entry
+  sched --> monitorSm
+  sched --> closer
+  sched --> recon
+  ddb[("DynamoDB")]
+  s3[("S3 summaries")]
+  alpaca["Alpaca API"]
+  execIC &amp; execCS &amp; monitor &amp; closer --> alpaca
+  execIC &amp; execCS &amp; monitor &amp; closer &amp; recon --> ddb
+  recon --> s3
+      </pre>
+      <figure class="chart" data-chart="system-at-a-glance"></figure>
+      <aside class="note">
+        <p>Stacks: <code>cdk/app.py</code>. Functions: <code>cdk/stacks/compute_stack.py</code>. Strategies: <code>src/common/config.py</code>.</p>
+        <p>Test count: <code>uv run --group cdk --group dev python -m pytest tests/unit tests/cdk</code> at <code>4b1dc2f</code>.</p>
+      </aside>
+    </section>
+
+    <section>
+      <h2>Run it</h2>
+      <ol class="steps">
+        <li><pre><code>git clone https://github.com/darblinko/spy-0dte-spreads
+cd spy-0dte-spreads</code></pre></li>
+        <li><pre><code>uv run --group dev python -m pytest</code></pre></li>
+        <li><pre><code>uv run --group cdk --group dev python -m pytest tests/cdk</code></pre></li>
+      </ol>
+      <p>The unit tests need no AWS access. The CDK tests also need Node.js. Deployment steps are in the README.</p>
+    </section>
+
+    <section>
+      <h2>Limitations</h2>
+      <ul>
+        <li>Option symbols encode the strike as a plain integer, while the OCC format encodes the strike multiplied by 1,000. The symbols the code builds name strikes that do not exist; the effect at the broker has not been verified.</li>
+        <li>There is no daily loss limit and no position sizing: the configuration fields for both are not read by any code.</li>
+        <li>No code checks order fills. Positions are recorded on submission and marked closed whether or not the close order was submitted.</li>
+        <li>The dashboard metrics are never published, and there are no CloudWatch alarms.</li>
+        <li>The repository contains no backtest, no simulation and no trading record. Nothing in it shows that the strategies have an edge.</li>
+      </ul>
+      <aside class="note">
+        <p>Details and file references: the README section "Design decisions and limitations".</p>
+      </aside>
+    </section>
+
+    <section>
+      <h2>Not investment advice</h2>
+      <p>This is a software engineering example. It is not investment advice, a recommendation to trade any security or strategy, or an offer of any service. Options trading can lose more than the credit received, and trading can lose the capital invested. The code comes with no warranty.</p>
+    </section>
+  </main>
+
+  <footer>
+    premium-selling. Apache-2.0. Figures generated from <code>docs/data.json</code> at <code>4b1dc2f</code>.
+  </footer>
+
+  <script src="charts.js" defer></script>
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.esm.min.mjs";
+    const dark = document.documentElement.dataset.theme === "dark" ||
+      (document.documentElement.dataset.theme !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+    mermaid.initialize({ startOnLoad: true, theme: dark ? "dark" : "neutral",
+      fontFamily: "IBM Plex Sans, system-ui, sans-serif", securityLevel: "strict" });
+  </script>
+</body>
+</html>
