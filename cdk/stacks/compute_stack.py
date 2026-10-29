@@ -1,5 +1,7 @@
 """Lambda functions (Container Image) for premium-selling."""
 
+from pathlib import Path
+
 from aws_cdk import (
     Duration,
     Stack,
@@ -14,6 +16,8 @@ from constructs import Construct
 
 from .observability_stack import ObservabilityStack
 from .storage_stack import StorageStack
+
+SRC_DIR = Path(__file__).resolve().parents[2] / "src"
 
 
 class ComputeStack(Stack):
@@ -38,7 +42,7 @@ class ComputeStack(Stack):
             "SNS_ERROR_TOPIC": observability.error_topic.topic_arn,
         }
 
-        src_path = "../src"
+        src_path = str(SRC_DIR)
 
         # --- Scanner Lambda ---
         self.scanner_fn = _lambda.DockerImageFunction(
