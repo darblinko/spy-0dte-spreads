@@ -6,34 +6,34 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class PremiumConfig:
-    name: str                       # "IC_SPY" or "CS_SPY"
-    underlying: str                 # "SPY"
-    secret_name: str                # Secrets Manager secret name
+    name: str  # "IC_SPY" or "CS_SPY"
+    underlying: str  # "SPY"
+    secret_name: str  # Secrets Manager secret name
 
     # Strike selection
-    short_delta_min: float          # Minimum delta for short strike
-    short_delta_max: float          # Maximum delta for short strike
-    spread_width: float             # Points between short and long strikes
-    min_credit: float               # Minimum acceptable credit per spread
+    short_delta_min: float  # Minimum delta for short strike
+    short_delta_max: float  # Maximum delta for short strike
+    spread_width: float  # Points between short and long strikes
+    min_credit: float  # Minimum acceptable credit per spread
 
     # Risk management
-    stop_loss_multiplier: float     # Close at N * credit received
-    take_profit_pct: float          # Take profit at this % of credit
-    max_positions: int              # Max concurrent spreads
-    max_daily_loss: float           # Dollar stop for the day
-    position_size_pct: float        # % of equity per spread
+    stop_loss_multiplier: float  # Close at N * credit received
+    take_profit_pct: float  # Take profit at this % of credit
+    max_positions: int  # Max concurrent spreads
+    max_daily_loss: float  # Dollar stop for the day
+    position_size_pct: float  # % of equity per spread
 
     # Timing (all ET)
-    earliest_entry: str             # "10:00"
-    latest_entry: str               # "14:30"
-    force_close_time: str           # "15:45"
-    regime_detection_time: str      # "10:00"
+    earliest_entry: str  # "10:00"
+    latest_entry: str  # "14:30"
+    force_close_time: str  # "15:45"
+    regime_detection_time: str  # "10:00"
 
     # Regime detection thresholds
-    vwap_cross_threshold: int       # >= N crosses in 30 min = range
-    candle_body_trend: float        # Body ratio above this = trend signal
-    candle_body_range: float        # Body ratio below this = range signal
-    regime_confidence_min: float    # Minimum confidence to trade
+    vwap_cross_threshold: int  # >= N crosses in 30 min = range
+    candle_body_trend: float  # Body ratio above this = trend signal
+    candle_body_range: float  # Body ratio below this = range signal
+    regime_confidence_min: float  # Minimum confidence to trade
 
 
 # Iron condor config: used on range days

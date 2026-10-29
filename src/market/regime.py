@@ -4,26 +4,29 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from .vwap import compute_vwap, count_vwap_crosses, get_current_vwap_position
-from .opening_range import compute_opening_range, classify_or_breakout
 from common.models import MarketRegime
+
+from .opening_range import classify_or_breakout, compute_opening_range
+from .vwap import compute_vwap, count_vwap_crosses, get_current_vwap_position
 
 
 @dataclass(frozen=True)
 class RegimeSignals:
     """Individual signals contributing to regime classification."""
+
     vwap_crosses: int
-    vwap_position: str          # "above", "below", "at"
-    or_breakout: str            # "above", "below", "inside"
-    candle_body_ratio: float    # 0.0 to 1.0
+    vwap_position: str  # "above", "below", "at"
+    or_breakout: str  # "above", "below", "inside"
+    candle_body_ratio: float  # 0.0 to 1.0
     vix_level: float
 
 
 @dataclass(frozen=True)
 class RegimeResult:
     """Market regime classification with confidence."""
+
     regime: MarketRegime
-    confidence: float           # 0.0 to 1.0
+    confidence: float  # 0.0 to 1.0
     signals: RegimeSignals
 
 
@@ -42,18 +45,21 @@ def compute_candle_body_ratio(bars: pd.DataFrame) -> float:
     if bars.empty:
         return 0.5
 
-    body_sizes = (bars['close'] - bars['open']).abs()
-    range_sizes = bars['high'] - bars['low']
+    body_sizes = (bars["close"] - bars["open"]).abs()
+    range_sizes = bars["high"] - bars["low"]
     # Avoid division by zero for doji bars
-    range_sizes = range_sizes.replace(0, float('nan'))
+    range_sizes = range_sizes.replace(0, float("nan"))
     ratios = body_sizes / range_sizes
     return float(ratios.mean())
 
 
-def classify_regime(bars: pd.DataFrame, vix_level: float,
-                    vwap_cross_threshold: int = 3,
-                    candle_body_trend: float = 0.6,
-                    candle_body_range: float = 0.4) -> RegimeResult:
+def classify_regime(
+    bars: pd.DataFrame,
+    vix_level: float,
+    vwap_cross_threshold: int = 3,
+    candle_body_trend: float = 0.6,
+    candle_body_range: float = 0.4,
+) -> RegimeResult:
     """Classify market regime from intraday SPY bars.
 
     Combines multiple signals:
@@ -80,8 +86,8 @@ def classify_regime(bars: pd.DataFrame, vix_level: float,
         )
 
     vwap = compute_vwap(bars)
-    vwap_crosses = count_vwap_crosses(bars['close'], vwap)
-    current_price = float(bars['close'].iloc[-1])
+    vwap_crosses = count_vwap_crosses(bars["close"], vwap)
+    current_price = float(bars["close"].iloc[-1])
     current_vwap = float(vwap.iloc[-1])
     vwap_position = get_current_vwap_position(current_price, current_vwap)
 

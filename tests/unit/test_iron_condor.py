@@ -2,8 +2,8 @@
 
 import pytest
 
+from strategy.iron_condor import build_iron_condor
 from strategy.strike_selection import OptionQuote
-from strategy.iron_condor import build_iron_condor, IronCondorResult
 
 
 def _put_chain() -> list[OptionQuote]:

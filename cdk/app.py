@@ -2,11 +2,10 @@
 """CDK app entry point for premium-selling system."""
 
 import aws_cdk as cdk
-
-from stacks.storage_stack import StorageStack
-from stacks.observability_stack import ObservabilityStack
 from stacks.compute_stack import ComputeStack
+from stacks.observability_stack import ObservabilityStack
 from stacks.orchestration_stack import OrchestrationStack
+from stacks.storage_stack import StorageStack
 
 app = cdk.App()
 
@@ -19,14 +18,16 @@ storage = StorageStack(app, "PremiumStorage", env=env)
 observability = ObservabilityStack(app, "PremiumObservability", env=env)
 
 compute = ComputeStack(
-    app, "PremiumCompute",
+    app,
+    "PremiumCompute",
     storage=storage,
     observability=observability,
     env=env,
 )
 
 OrchestrationStack(
-    app, "PremiumOrchestration",
+    app,
+    "PremiumOrchestration",
     compute=compute,
     observability=observability,
     env=env,

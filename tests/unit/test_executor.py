@@ -1,24 +1,23 @@
 """Tests for executor Lambda handler."""
 
-from unittest.mock import patch, MagicMock, call
-from dataclasses import dataclass
+from unittest.mock import patch
 
 import pytest
 
-from common.models import MarketRegime, SpreadType, PositionStatus
-from strategy.strike_selection import OptionQuote
-from strategy.iron_condor import IronCondorResult, SpreadLeg
-from strategy.credit_spread import CreditSpreadResult
+from common.models import MarketRegime, PositionStatus, SpreadType
 from executor.handler import (
+    _build_position_from_cs,
+    _build_position_from_ic,
     _build_spread_for_regime,
     _compute_risk_levels,
-    _build_position_from_ic,
-    _build_position_from_cs,
     _execute,
 )
-
+from strategy.credit_spread import CreditSpreadResult
+from strategy.iron_condor import IronCondorResult
+from strategy.strike_selection import OptionQuote
 
 # --- Fixtures ---
+
 
 def _put_chain() -> list[OptionQuote]:
     """Put chain with $1 strike spacing to match IC_SPY_CONFIG spread_width=1.0."""
@@ -52,6 +51,7 @@ def _call_chain() -> list[OptionQuote]:
 
 def _ic_result() -> IronCondorResult:
     from strategy.iron_condor import build_iron_condor
+
     return build_iron_condor(
         put_chain=_put_chain(),
         call_chain=_call_chain(),
@@ -64,6 +64,7 @@ def _ic_result() -> IronCondorResult:
 
 def _cs_result() -> CreditSpreadResult:
     from strategy.credit_spread import build_credit_spread
+
     return build_credit_spread(
         regime=MarketRegime.UPTREND,
         put_chain=_put_chain(),
@@ -76,6 +77,7 @@ def _cs_result() -> CreditSpreadResult:
 
 
 # --- Tests ---
+
 
 class TestBuildSpreadForRegime:
     def test_range_builds_iron_condor(self):
@@ -226,14 +228,23 @@ class TestExecuteIntegration:
     @patch("executor.handler.publish_trade_alert")
     @patch("executor.handler._submit_orders")
     @patch("executor.handler._fetch_options_chain")
-    def test_successful_ic_execution(self, mock_chain, mock_submit,
-                                      mock_alert, mock_put_pos, mock_rec_trade,
-                                      mock_pos_table, mock_trades_table,
-                                      mock_sns_err, mock_sns_trade):
+    def test_successful_ic_execution(
+        self,
+        mock_chain,
+        mock_submit,
+        mock_alert,
+        mock_put_pos,
+        mock_rec_trade,
+        mock_pos_table,
+        mock_trades_table,
+        mock_sns_err,
+        mock_sns_trade,
+    ):
         mock_chain.return_value = (_put_chain(), _call_chain())
         mock_submit.return_value = True
 
         from common.config import IC_SPY_CONFIG
+
         scan_result = {
             "should_trade": True,
             "strategy": "IC_SPY",
@@ -254,12 +265,12 @@ class TestExecuteIntegration:
     @patch("executor.handler.get_sns_error_topic", return_value="arn:aws:sns:err")
     @patch("executor.handler.get_positions_table", return_value="positions")
     @patch("executor.handler._fetch_options_chain")
-    def test_no_execution_when_spread_fails(self, mock_chain,
-                                             mock_pos_table, mock_sns_err):
+    def test_no_execution_when_spread_fails(self, mock_chain, mock_pos_table, mock_sns_err):
         # Empty chains = no spread can be built
         mock_chain.return_value = ([], [])
 
         from common.config import IC_SPY_CONFIG
+
         scan_result = {
             "should_trade": True,
             "strategy": "IC_SPY",

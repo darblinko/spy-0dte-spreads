@@ -1,6 +1,6 @@
 """Tests for reconciler Lambda handler."""
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
@@ -72,11 +72,18 @@ class TestReconcileIntegration:
     @patch("reconciler.handler.get_trades_table", return_value="trades")
     @patch("reconciler.handler.get_all_open_positions", return_value=[])
     @patch("reconciler.handler.get_positions_table", return_value="positions")
-    def test_empty_day_reconciliation(self, mock_pos_table, mock_pos,
-                                       mock_trades_table, mock_trades,
-                                       mock_mkt_table, mock_mkt_state,
-                                       mock_s3_bucket, mock_s3_write,
-                                       mock_report):
+    def test_empty_day_reconciliation(
+        self,
+        mock_pos_table,
+        mock_pos,
+        mock_trades_table,
+        mock_trades,
+        mock_mkt_table,
+        mock_mkt_state,
+        mock_s3_bucket,
+        mock_s3_write,
+        mock_report,
+    ):
         result = _reconcile()
 
         assert result["trades_opened"] == 0
@@ -93,11 +100,18 @@ class TestReconcileIntegration:
     @patch("reconciler.handler.get_trades_table", return_value="trades")
     @patch("reconciler.handler.get_all_open_positions", return_value=[])
     @patch("reconciler.handler.get_positions_table", return_value="positions")
-    def test_includes_market_state(self, mock_pos_table, mock_pos,
-                                    mock_trades_table, mock_trades,
-                                    mock_mkt_table, mock_mkt_state,
-                                    mock_s3_bucket, mock_s3_write,
-                                    mock_report):
+    def test_includes_market_state(
+        self,
+        mock_pos_table,
+        mock_pos,
+        mock_trades_table,
+        mock_trades,
+        mock_mkt_table,
+        mock_mkt_state,
+        mock_s3_bucket,
+        mock_s3_write,
+        mock_report,
+    ):
         mock_trades.return_value = []
         mock_mkt_state.return_value = {
             "regime": "range",
@@ -119,11 +133,18 @@ class TestReconcileIntegration:
     @patch("reconciler.handler.get_trades_table", return_value="trades")
     @patch("reconciler.handler.get_all_open_positions", return_value=[])
     @patch("reconciler.handler.get_positions_table", return_value="positions")
-    def test_s3_key_uses_date(self, mock_pos_table, mock_pos,
-                               mock_trades_table, mock_trades,
-                               mock_mkt_table, mock_mkt_state,
-                               mock_s3_bucket, mock_s3_write,
-                               mock_report):
+    def test_s3_key_uses_date(
+        self,
+        mock_pos_table,
+        mock_pos,
+        mock_trades_table,
+        mock_trades,
+        mock_mkt_table,
+        mock_mkt_state,
+        mock_s3_bucket,
+        mock_s3_write,
+        mock_report,
+    ):
         mock_trades.return_value = []
         _reconcile()
 

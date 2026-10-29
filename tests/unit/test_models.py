@@ -7,15 +7,15 @@ from decimal import Decimal
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../src"))
 
 from common.models import (
+    MarketRegime,
+    PositionStatus,
     SpreadLeg,
     SpreadPosition,
-    TradeRecord,
-    MarketRegime,
     SpreadType,
-    PositionStatus,
+    TradeRecord,
     generate_spread_id,
 )
 
@@ -153,13 +153,13 @@ class TestSpreadPosition:
         item = pos.to_dynamo_item()
 
         # Verify Decimal conversion
-        assert isinstance(item['net_credit'], Decimal)
-        assert isinstance(item['vix_at_entry'], Decimal)
-        assert item['spread_id'] == "abc123"
+        assert isinstance(item["net_credit"], Decimal)
+        assert isinstance(item["vix_at_entry"], Decimal)
+        assert item["spread_id"] == "abc123"
 
         # Legs stored as JSON string
-        assert isinstance(item['legs'], str)
-        legs_data = json.loads(item['legs'])
+        assert isinstance(item["legs"], str)
+        legs_data = json.loads(item["legs"])
         assert len(legs_data) == 2
 
         # Roundtrip
@@ -172,15 +172,15 @@ class TestSpreadPosition:
     def test_from_dynamo_missing_fields(self):
         """Missing optional fields should use defaults."""
         item = {
-            'spread_id': 'xyz789',
-            'spread_type': 'iron_condor',
-            'underlying': 'SPY',
-            'entry_time': '2026-04-04T10:00:00',
-            'expiration_date': '2026-04-04',
-            'strategy': 'IC_SPY',
+            "spread_id": "xyz789",
+            "spread_type": "iron_condor",
+            "underlying": "SPY",
+            "entry_time": "2026-04-04T10:00:00",
+            "expiration_date": "2026-04-04",
+            "strategy": "IC_SPY",
         }
         pos = SpreadPosition.from_dynamo_item(item)
-        assert pos.spread_id == 'xyz789'
+        assert pos.spread_id == "xyz789"
         assert pos.net_credit == 0.0
         assert pos.status == PositionStatus.OPEN.value
 
@@ -216,9 +216,9 @@ class TestTradeRecord:
             close_reason="profit",
         )
         item = trade.to_dynamo_item()
-        assert isinstance(item['net_credit'], Decimal)
-        assert isinstance(item['realized_pnl'], Decimal)
-        assert item['close_reason'] == "profit"
+        assert isinstance(item["net_credit"], Decimal)
+        assert isinstance(item["realized_pnl"], Decimal)
+        assert item["close_reason"] == "profit"
 
     def test_empty_strings_skipped(self):
         trade = TradeRecord(
@@ -230,8 +230,8 @@ class TestTradeRecord:
             underlying="SPY",
         )
         item = trade.to_dynamo_item()
-        assert 'close_reason' not in item
-        assert 'legs' not in item
+        assert "close_reason" not in item
+        assert "legs" not in item
 
 
 class TestEnums:

@@ -9,20 +9,19 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from common.config import (
-    get_config,
-    get_positions_table,
-    get_trades_table,
     get_market_state_table,
+    get_positions_table,
     get_s3_bucket,
-    get_sns_trade_topic,
     get_sns_error_topic,
+    get_sns_trade_topic,
+    get_trades_table,
 )
 from common.dynamo_io import (
     get_all_open_positions,
-    get_trades_for_date,
     get_latest_market_state,
+    get_trades_for_date,
 )
-from common.notifications import publish_trade_alert, publish_error_alert
+from common.notifications import publish_error_alert
 from common.s3_io import write_json_to_s3
 
 logger = logging.getLogger(__name__)
@@ -84,8 +83,7 @@ def _reconcile() -> dict:
     return summary
 
 
-def _compute_daily_summary(date_str: str, trades: list[dict],
-                           orphaned_count: int) -> dict:
+def _compute_daily_summary(date_str: str, trades: list[dict], orphaned_count: int) -> dict:
     """Compute aggregate daily statistics from trades."""
     open_trades = [t for t in trades if t.get("action") == "OPEN"]
     close_trades = [t for t in trades if t.get("action") == "CLOSE"]
@@ -135,6 +133,7 @@ def _send_daily_report(summary: dict) -> None:
             message += f"WARNING: {summary['orphaned_positions']} orphaned positions\n"
 
         from common.notifications import _get_sns
+
         sns = _get_sns()
         sns.publish(
             TopicArn=topic,

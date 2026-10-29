@@ -1,30 +1,33 @@
 """Directional credit spread construction for trend days."""
 
 from dataclasses import dataclass
-from typing import Optional
 
 from common.models import MarketRegime
-from .strike_selection import OptionQuote, find_spread_strikes
+
 from .iron_condor import SpreadLeg
+from .strike_selection import OptionQuote, find_spread_strikes
 
 
 @dataclass(frozen=True)
 class CreditSpreadResult:
     """Result of directional credit spread construction."""
-    spread_type: str        # "put_credit_spread" or "call_credit_spread"
+
+    spread_type: str  # "put_credit_spread" or "call_credit_spread"
     legs: tuple[SpreadLeg, ...]
     net_credit: float
     max_loss: float
     spread_width: float
 
 
-def build_credit_spread(regime: MarketRegime,
-                        put_chain: list[OptionQuote],
-                        call_chain: list[OptionQuote],
-                        delta_min: float,
-                        delta_max: float,
-                        spread_width: float,
-                        min_credit: float) -> Optional[CreditSpreadResult]:
+def build_credit_spread(
+    regime: MarketRegime,
+    put_chain: list[OptionQuote],
+    call_chain: list[OptionQuote],
+    delta_min: float,
+    delta_max: float,
+    spread_width: float,
+    min_credit: float,
+) -> CreditSpreadResult | None:
     """Build a directional credit spread based on market regime.
 
     Uptrend -> sell put credit spread (bullish: collect credit below market).
@@ -44,24 +47,20 @@ def build_credit_spread(regime: MarketRegime,
         CreditSpreadResult or None if regime is wrong or construction fails.
     """
     if regime == MarketRegime.UPTREND:
-        return _build_put_credit_spread(
-            put_chain, delta_min, delta_max, spread_width, min_credit
-        )
+        return _build_put_credit_spread(put_chain, delta_min, delta_max, spread_width, min_credit)
     elif regime == MarketRegime.DOWNTREND:
-        return _build_call_credit_spread(
-            call_chain, delta_min, delta_max, spread_width, min_credit
-        )
+        return _build_call_credit_spread(call_chain, delta_min, delta_max, spread_width, min_credit)
     return None
 
 
-def _build_put_credit_spread(put_chain: list[OptionQuote],
-                             delta_min: float,
-                             delta_max: float,
-                             spread_width: float,
-                             min_credit: float) -> Optional[CreditSpreadResult]:
-    short, long = find_spread_strikes(
-        put_chain, delta_min, delta_max, spread_width, "put"
-    )
+def _build_put_credit_spread(
+    put_chain: list[OptionQuote],
+    delta_min: float,
+    delta_max: float,
+    spread_width: float,
+    min_credit: float,
+) -> CreditSpreadResult | None:
+    short, long = find_spread_strikes(put_chain, delta_min, delta_max, spread_width, "put")
     if short is None or long is None:
         return None
 
@@ -83,14 +82,14 @@ def _build_put_credit_spread(put_chain: list[OptionQuote],
     )
 
 
-def _build_call_credit_spread(call_chain: list[OptionQuote],
-                              delta_min: float,
-                              delta_max: float,
-                              spread_width: float,
-                              min_credit: float) -> Optional[CreditSpreadResult]:
-    short, long = find_spread_strikes(
-        call_chain, delta_min, delta_max, spread_width, "call"
-    )
+def _build_call_credit_spread(
+    call_chain: list[OptionQuote],
+    delta_min: float,
+    delta_max: float,
+    spread_width: float,
+    min_credit: float,
+) -> CreditSpreadResult | None:
+    short, long = find_spread_strikes(call_chain, delta_min, delta_max, spread_width, "call")
     if short is None or long is None:
         return None
 

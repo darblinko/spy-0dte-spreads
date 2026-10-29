@@ -1,15 +1,12 @@
 """Tests for closer Lambda handler."""
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-import pytest
-
-from common.models import SpreadPosition, SpreadType, PositionStatus
 from closer.handler import _close_all
+from common.models import PositionStatus, SpreadPosition, SpreadType
 
 
-def _make_position(spread_id: str = "test-123",
-                   strategy: str = "IC_SPY") -> SpreadPosition:
+def _make_position(spread_id: str = "test-123", strategy: str = "IC_SPY") -> SpreadPosition:
     return SpreadPosition(
         spread_id=spread_id,
         spread_type=SpreadType.IRON_CONDOR.value,
@@ -48,10 +45,19 @@ class TestCloseAll:
     @patch(f"{_C}._update_position_prices")
     @patch(f"{_C}.get_positions_table", return_value="positions")
     @patch(f"{_C}.get_all_open_positions")
-    def test_closes_all_positions(self, mock_get, mock_table, mock_update,
-                                   mock_put, mock_close_orders, mock_rec,
-                                   mock_m_pos_table, mock_trades_table,
-                                   mock_sns, mock_alert):
+    def test_closes_all_positions(
+        self,
+        mock_get,
+        mock_table,
+        mock_update,
+        mock_put,
+        mock_close_orders,
+        mock_rec,
+        mock_m_pos_table,
+        mock_trades_table,
+        mock_sns,
+        mock_alert,
+    ):
         positions = [
             _make_position("spread-1", "IC_SPY"),
             _make_position("spread-2", "CS_SPY"),
@@ -74,10 +80,19 @@ class TestCloseAll:
     @patch(f"{_C}._update_position_prices")
     @patch(f"{_C}.get_positions_table", return_value="positions")
     @patch(f"{_C}.get_all_open_positions")
-    def test_sets_eod_status(self, mock_get, mock_table, mock_update,
-                              mock_put, mock_close_orders, mock_rec,
-                              mock_m_pos_table, mock_trades_table,
-                              mock_sns, mock_alert):
+    def test_sets_eod_status(
+        self,
+        mock_get,
+        mock_table,
+        mock_update,
+        mock_put,
+        mock_close_orders,
+        mock_rec,
+        mock_m_pos_table,
+        mock_trades_table,
+        mock_sns,
+        mock_alert,
+    ):
         pos = _make_position()
         mock_get.return_value = [pos]
         mock_update.return_value = pos
@@ -96,12 +111,19 @@ class TestCloseAll:
     @patch(f"{_C}._update_position_prices")
     @patch(f"{_C}.get_positions_table", return_value="positions")
     @patch(f"{_C}.get_all_open_positions")
-    def test_closes_even_if_price_update_fails(self, mock_get, mock_table,
-                                                mock_update, mock_put,
-                                                mock_close_orders, mock_rec,
-                                                mock_m_pos_table,
-                                                mock_trades_table, mock_sns,
-                                                mock_alert):
+    def test_closes_even_if_price_update_fails(
+        self,
+        mock_get,
+        mock_table,
+        mock_update,
+        mock_put,
+        mock_close_orders,
+        mock_rec,
+        mock_m_pos_table,
+        mock_trades_table,
+        mock_sns,
+        mock_alert,
+    ):
         pos = _make_position()
         mock_get.return_value = [pos]
         mock_update.return_value = None  # price fetch failed

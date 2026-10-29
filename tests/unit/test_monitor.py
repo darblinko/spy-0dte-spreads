@@ -1,18 +1,18 @@
 """Tests for monitor Lambda handler."""
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-import pytest
-
-from common.models import SpreadPosition, PositionStatus, SpreadType
+from common.models import PositionStatus, SpreadPosition, SpreadType
 from monitor.handler import _check_thresholds, _monitor
 
 
-def _make_position(net_credit: float = 0.50,
-                   current_value: float = 0.30,
-                   stop_loss: float = 1.00,
-                   take_profit: float = 0.25,
-                   status: str = "open") -> SpreadPosition:
+def _make_position(
+    net_credit: float = 0.50,
+    current_value: float = 0.30,
+    stop_loss: float = 1.00,
+    take_profit: float = 0.25,
+    status: str = "open",
+) -> SpreadPosition:
     return SpreadPosition(
         spread_id="test-123",
         spread_type=SpreadType.IRON_CONDOR.value,
@@ -76,9 +76,18 @@ class TestMonitorIntegration:
     @patch("monitor.handler._update_position_prices")
     @patch("monitor.handler.get_positions_table", return_value="positions")
     @patch("monitor.handler.get_all_open_positions")
-    def test_closes_on_stop_loss(self, mock_get, mock_table, mock_update,
-                                  mock_put, mock_close_orders, mock_rec,
-                                  mock_trades_table, mock_sns, mock_alert):
+    def test_closes_on_stop_loss(
+        self,
+        mock_get,
+        mock_table,
+        mock_update,
+        mock_put,
+        mock_close_orders,
+        mock_rec,
+        mock_trades_table,
+        mock_sns,
+        mock_alert,
+    ):
         pos = _make_position(current_value=1.50, stop_loss=1.00)
         mock_get.return_value = [pos]
         mock_update.return_value = pos
@@ -107,8 +116,7 @@ class TestMonitorIntegration:
     @patch("monitor.handler._update_position_prices")
     @patch("monitor.handler.get_positions_table", return_value="positions")
     @patch("monitor.handler.get_all_open_positions")
-    def test_skips_failed_price_update(self, mock_get, mock_table,
-                                        mock_update, mock_put):
+    def test_skips_failed_price_update(self, mock_get, mock_table, mock_update, mock_put):
         pos = _make_position()
         mock_get.return_value = [pos]
         mock_update.return_value = None

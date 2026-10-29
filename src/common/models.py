@@ -2,11 +2,10 @@
 
 import json
 import uuid
-from dataclasses import dataclass, field, fields, asdict
-from datetime import datetime, date
+from dataclasses import asdict, dataclass, field, fields
+from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
-from typing import List, Optional
 
 
 class MarketRegime(str, Enum):
@@ -35,8 +34,8 @@ class PositionStatus(str, Enum):
 class SpreadLeg:
     leg_id: str
     contract_id: str
-    side: str                   # "sell" or "buy"
-    option_type: str            # "put" or "call"
+    side: str  # "sell" or "buy"
+    option_type: str  # "put" or "call"
     strike: float
     quantity: int
     fill_price: float
@@ -47,21 +46,21 @@ class SpreadLeg:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: dict) -> 'SpreadLeg':
+    def from_dict(cls, data: dict) -> "SpreadLeg":
         return cls(**{k: v for k, v in data.items() if k in {f.name for f in fields(cls)}})
 
 
 @dataclass
 class SpreadPosition:
     spread_id: str
-    spread_type: str            # SpreadType value
+    spread_type: str  # SpreadType value
     underlying: str
-    entry_time: str             # ISO format datetime
-    expiration_date: str        # ISO format date
-    strategy: str               # "IC_SPY" or "CS_SPY"
+    entry_time: str  # ISO format datetime
+    expiration_date: str  # ISO format date
+    strategy: str  # "IC_SPY" or "CS_SPY"
 
     # Legs stored as list of dicts for DynamoDB JSON
-    legs: List[dict] = field(default_factory=list)
+    legs: list[dict] = field(default_factory=list)
 
     # Aggregate metrics
     net_credit: float = 0.0
@@ -82,11 +81,11 @@ class SpreadPosition:
     spy_price_at_entry: float = 0.0
     expected_move_at_entry: float = 0.0
 
-    def get_legs(self) -> List[SpreadLeg]:
+    def get_legs(self) -> list[SpreadLeg]:
         """Deserialize legs from dict list."""
         return [SpreadLeg.from_dict(leg) for leg in self.legs]
 
-    def set_legs(self, leg_objects: List[SpreadLeg]) -> None:
+    def set_legs(self, leg_objects: list[SpreadLeg]) -> None:
         """Serialize legs to dict list for DynamoDB storage."""
         self.legs = [leg.to_dict() for leg in leg_objects]
 
@@ -97,8 +96,8 @@ class SpreadPosition:
             val = getattr(self, f.name)
             if val is None:
                 continue
-            if f.name == 'legs':
-                item['legs'] = json.dumps(val)
+            if f.name == "legs":
+                item["legs"] = json.dumps(val)
             elif isinstance(val, float):
                 item[f.name] = Decimal(str(round(val, 6)))
             elif isinstance(val, (datetime, date)):
@@ -108,7 +107,7 @@ class SpreadPosition:
         return item
 
     @classmethod
-    def from_dynamo_item(cls, item: dict) -> 'SpreadPosition':
+    def from_dynamo_item(cls, item: dict) -> "SpreadPosition":
         """Deserialize from DynamoDB item."""
         kwargs = {}
         field_names = {f.name for f in fields(cls)}
@@ -116,8 +115,8 @@ class SpreadPosition:
             if f.name not in item:
                 continue
             val = item[f.name]
-            if f.name == 'legs':
-                kwargs['legs'] = json.loads(val) if isinstance(val, str) else val
+            if f.name == "legs":
+                kwargs["legs"] = json.loads(val) if isinstance(val, str) else val
             elif isinstance(val, Decimal):
                 kwargs[f.name] = float(val)
             else:
@@ -127,10 +126,10 @@ class SpreadPosition:
 
 @dataclass
 class TradeRecord:
-    trade_date: str             # ISO date
+    trade_date: str  # ISO date
     spread_id: str
     strategy: str
-    action: str                 # "OPEN" or "CLOSE"
+    action: str  # "OPEN" or "CLOSE"
     spread_type: str
     underlying: str
 
@@ -149,7 +148,7 @@ class TradeRecord:
     expected_move: float = 0.0
 
     # Close reason
-    close_reason: str = ""      # "profit", "stop", "eod", "roll", "manual"
+    close_reason: str = ""  # "profit", "stop", "eod", "roll", "manual"
 
     def to_dynamo_item(self) -> dict:
         item = {}

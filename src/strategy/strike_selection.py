@@ -1,25 +1,24 @@
 """Option strike selection by delta from an options chain."""
 
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass(frozen=True)
 class OptionQuote:
     strike: float
-    delta: float        # Negative for puts, positive for calls
+    delta: float  # Negative for puts, positive for calls
     bid: float
     ask: float
-    option_type: str    # "put" or "call"
+    option_type: str  # "put" or "call"
 
     @property
     def mid_price(self) -> float:
         return (self.bid + self.ask) / 2
 
 
-def find_strike_by_delta(chain: list[OptionQuote],
-                         delta_min: float,
-                         delta_max: float) -> Optional[OptionQuote]:
+def find_strike_by_delta(
+    chain: list[OptionQuote], delta_min: float, delta_max: float
+) -> OptionQuote | None:
     """Find the option whose absolute delta falls within [delta_min, delta_max].
 
     Prefers the strike closest to delta_min (furthest OTM, most conservative).
@@ -32,21 +31,20 @@ def find_strike_by_delta(chain: list[OptionQuote],
     Returns:
         Best matching OptionQuote, or None if no match.
     """
-    candidates = [
-        q for q in chain
-        if delta_min <= abs(q.delta) <= delta_max
-    ]
+    candidates = [q for q in chain if delta_min <= abs(q.delta) <= delta_max]
     if not candidates:
         return None
     # Pick the one closest to delta_min (furthest OTM)
     return min(candidates, key=lambda q: abs(abs(q.delta) - delta_min))
 
 
-def find_spread_strikes(chain: list[OptionQuote],
-                        delta_min: float,
-                        delta_max: float,
-                        spread_width: float,
-                        option_type: str) -> tuple[Optional[OptionQuote], Optional[OptionQuote]]:
+def find_spread_strikes(
+    chain: list[OptionQuote],
+    delta_min: float,
+    delta_max: float,
+    spread_width: float,
+    option_type: str,
+) -> tuple[OptionQuote | None, OptionQuote | None]:
     """Find short and long strikes for a vertical spread.
 
     For puts: short strike is higher (closer to ATM), long is lower (protective).

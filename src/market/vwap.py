@@ -13,11 +13,11 @@ def compute_vwap(bars: pd.DataFrame) -> pd.Series:
     Returns:
         Series of VWAP values aligned to bars index.
     """
-    typical_price = (bars['high'] + bars['low'] + bars['close']) / 3
-    cum_tp_vol = (typical_price * bars['volume']).cumsum()
-    cum_vol = bars['volume'].cumsum()
+    typical_price = (bars["high"] + bars["low"] + bars["close"]) / 3
+    cum_tp_vol = (typical_price * bars["volume"]).cumsum()
+    cum_vol = bars["volume"].cumsum()
     # Avoid division by zero for pre-market bars with no volume
-    vwap = cum_tp_vol / cum_vol.replace(0, float('nan'))
+    vwap = cum_tp_vol / cum_vol.replace(0, float("nan"))
     return vwap
 
 

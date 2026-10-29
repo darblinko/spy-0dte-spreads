@@ -3,8 +3,8 @@
 import pytest
 
 from common.models import MarketRegime
+from strategy.credit_spread import build_credit_spread
 from strategy.strike_selection import OptionQuote
-from strategy.credit_spread import build_credit_spread, CreditSpreadResult
 
 
 def _put_chain() -> list[OptionQuote]:

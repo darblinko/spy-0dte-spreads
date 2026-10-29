@@ -7,20 +7,19 @@ closes when thresholds are breached.
 
 import logging
 from datetime import datetime
-from typing import Optional
 from zoneinfo import ZoneInfo
 
 from common.alpaca_clients import create_options_data_client, create_trading_client
 from common.config import (
     get_config,
     get_positions_table,
-    get_trades_table,
-    get_sns_trade_topic,
     get_sns_error_topic,
+    get_sns_trade_topic,
+    get_trades_table,
 )
 from common.dynamo_io import get_all_open_positions, put_position, record_trade
-from common.models import SpreadPosition, TradeRecord, PositionStatus
-from common.notifications import publish_trade_alert, publish_error_alert
+from common.models import PositionStatus, SpreadPosition, TradeRecord
+from common.notifications import publish_error_alert, publish_trade_alert
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -95,8 +94,7 @@ def _monitor(event: dict) -> dict:
     }
 
 
-def _update_position_prices(secret_name: str,
-                            position: SpreadPosition) -> Optional[SpreadPosition]:
+def _update_position_prices(secret_name: str, position: SpreadPosition) -> SpreadPosition | None:
     """Fetch current option prices and update position P&L.
 
     Returns a new position with updated current_value and unrealized_pnl,
@@ -113,6 +111,7 @@ def _update_position_prices(secret_name: str,
             symbols.append(f"SPY{today_str}{opt_char}{int(leg.strike):08d}")
 
         from alpaca.data.requests import OptionLatestQuoteRequest
+
         quote_request = OptionLatestQuoteRequest(symbol_or_symbols=symbols)
         quotes = options_client.get_option_latest_quote(quote_request)
 
@@ -142,7 +141,7 @@ def _update_position_prices(secret_name: str,
         return None
 
 
-def _check_thresholds(position: SpreadPosition) -> Optional[str]:
+def _check_thresholds(position: SpreadPosition) -> str | None:
     """Check if position has hit stop loss or take profit.
 
     Stop loss: current_value >= stop_loss_price (spread has widened).
@@ -160,8 +159,7 @@ def _check_thresholds(position: SpreadPosition) -> Optional[str]:
     return None
 
 
-def _close_position(position: SpreadPosition, reason: str,
-                    secret_name: str) -> None:
+def _close_position(position: SpreadPosition, reason: str, secret_name: str) -> None:
     """Close a position: submit closing orders, update DB, notify."""
     positions_table = get_positions_table()
     trades_table = get_trades_table()
@@ -200,17 +198,18 @@ def _close_position(position: SpreadPosition, reason: str,
     try:
         topic = get_sns_trade_topic()
         publish_trade_alert(
-            topic, position.strategy, f"CLOSE ({reason})",
-            position.spread_id, position.spread_type,
-            position.unrealized_pnl, position.underlying,
+            topic,
+            position.strategy,
+            f"CLOSE ({reason})",
+            position.spread_id,
+            position.spread_type,
+            position.unrealized_pnl,
+            position.underlying,
         )
     except Exception:
         logger.warning("Failed to send close notification")
 
-    logger.info(
-        f"Closed {position.spread_id}: reason={reason} "
-        f"pnl={position.unrealized_pnl:.2f}"
-    )
+    logger.info(f"Closed {position.spread_id}: reason={reason} pnl={position.unrealized_pnl:.2f}")
 
 
 def _submit_close_orders(secret_name: str, position: SpreadPosition) -> bool:
@@ -222,7 +221,9 @@ def _submit_close_orders(secret_name: str, position: SpreadPosition) -> bool:
     try:
         from alpaca.trading.enums import OrderClass, PositionIntent
         from alpaca.trading.requests import (
-            LimitOrderRequest, OptionLegRequest, TimeInForce,
+            LimitOrderRequest,
+            OptionLegRequest,
+            TimeInForce,
         )
 
         trading_client = create_trading_client(secret_name)
@@ -235,14 +236,17 @@ def _submit_close_orders(secret_name: str, position: SpreadPosition) -> bool:
             symbol = f"SPY{today_str}{opt_char}{int(leg.strike):08d}"
 
             # Reverse: sell->buy_to_close, buy->sell_to_close
-            intent = (PositionIntent.BUY_TO_CLOSE if leg.side == "sell"
-                      else PositionIntent.SELL_TO_CLOSE)
+            intent = (
+                PositionIntent.BUY_TO_CLOSE if leg.side == "sell" else PositionIntent.SELL_TO_CLOSE
+            )
 
-            option_legs.append(OptionLegRequest(
-                symbol=symbol,
-                ratio_qty=leg.quantity,
-                position_intent=intent,
-            ))
+            option_legs.append(
+                OptionLegRequest(
+                    symbol=symbol,
+                    ratio_qty=leg.quantity,
+                    position_intent=intent,
+                )
+            )
 
         # Positive limit_price = debit paid to close
         order_request = LimitOrderRequest(

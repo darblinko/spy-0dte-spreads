@@ -4,22 +4,24 @@ import os
 import sys
 
 import pandas as pd
-import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../src"))
 
 from market.vwap import compute_vwap, count_vwap_crosses, get_current_vwap_position
 
 
 def _make_bars(prices, volumes):
     """Create simple bars where open=close=high=low for predictable VWAP."""
-    return pd.DataFrame({
-        'open': prices,
-        'high': prices,
-        'low': prices,
-        'close': prices,
-        'volume': volumes,
-    }, index=pd.date_range('2026-04-04 09:30', periods=len(prices), freq='1min'))
+    return pd.DataFrame(
+        {
+            "open": prices,
+            "high": prices,
+            "low": prices,
+            "close": prices,
+            "volume": volumes,
+        },
+        index=pd.date_range("2026-04-04 09:30", periods=len(prices), freq="1min"),
+    )
 
 
 class TestComputeVwap:

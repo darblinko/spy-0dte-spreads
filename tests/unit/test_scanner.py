@@ -1,17 +1,14 @@
 """Tests for scanner Lambda handler decision logic."""
 
-from unittest.mock import patch, MagicMock
 from datetime import datetime
-
-import pandas as pd
+from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
-import pytest
+import pandas as pd
 
-from market.regime import RegimeResult, RegimeSignals
 from common.models import MarketRegime
+from market.regime import RegimeResult, RegimeSignals
 from scanner.handler import _check_regime_alignment, _no_trade, _scan
-
 
 ET = ZoneInfo("US/Eastern")
 
@@ -82,14 +79,25 @@ class TestScanIntegration:
     @patch("scanner.handler.create_stock_data_client")
     @patch("scanner.handler.create_trading_client")
     @patch("scanner.handler.is_market_open", return_value=(True, MagicMock()))
-    def test_trade_signal_on_range_day(self, mock_open, mock_trading, mock_stock,
-                                        mock_classify, mock_save, mock_vix,
-                                        mock_em, mock_pos, mock_pos_table,
-                                        mock_mkt_table, mock_sns):
+    def test_trade_signal_on_range_day(
+        self,
+        mock_open,
+        mock_trading,
+        mock_stock,
+        mock_classify,
+        mock_save,
+        mock_vix,
+        mock_em,
+        mock_pos,
+        mock_pos_table,
+        mock_mkt_table,
+        mock_sns,
+    ):
         mock_classify.return_value = _make_regime(MarketRegime.RANGE, 0.8)
         mock_stock.return_value = _mock_stock_client()
 
         from common.config import IC_SPY_CONFIG
+
         result = _scan(IC_SPY_CONFIG, "IC_SPY")
 
         assert result["should_trade"] is True
@@ -106,15 +114,25 @@ class TestScanIntegration:
     @patch("scanner.handler.create_stock_data_client")
     @patch("scanner.handler.create_trading_client")
     @patch("scanner.handler.is_market_open", return_value=(True, MagicMock()))
-    def test_no_trade_on_regime_mismatch(self, mock_open, mock_trading, mock_stock,
-                                          mock_classify, mock_save, mock_vix,
-                                          mock_em, mock_pos, mock_pos_table,
-                                          mock_mkt_table):
+    def test_no_trade_on_regime_mismatch(
+        self,
+        mock_open,
+        mock_trading,
+        mock_stock,
+        mock_classify,
+        mock_save,
+        mock_vix,
+        mock_em,
+        mock_pos,
+        mock_pos_table,
+        mock_mkt_table,
+    ):
         # IC_SPY should not trade on uptrend days
         mock_classify.return_value = _make_regime(MarketRegime.UPTREND, 0.8)
         mock_stock.return_value = _mock_stock_client()
 
         from common.config import IC_SPY_CONFIG
+
         result = _scan(IC_SPY_CONFIG, "IC_SPY")
 
         assert result["should_trade"] is False
@@ -124,6 +142,7 @@ class TestScanIntegration:
     @patch("scanner.handler.is_market_open", return_value=(False, MagicMock()))
     def test_no_trade_when_market_closed(self, mock_open, mock_trading):
         from common.config import IC_SPY_CONFIG
+
         result = _scan(IC_SPY_CONFIG, "IC_SPY")
 
         assert result["should_trade"] is False
@@ -139,14 +158,24 @@ class TestScanIntegration:
     @patch("scanner.handler.create_stock_data_client")
     @patch("scanner.handler.create_trading_client")
     @patch("scanner.handler.is_market_open", return_value=(True, MagicMock()))
-    def test_no_trade_on_low_confidence(self, mock_open, mock_trading, mock_stock,
-                                         mock_classify, mock_save, mock_vix,
-                                         mock_em, mock_pos, mock_pos_table,
-                                         mock_mkt_table):
+    def test_no_trade_on_low_confidence(
+        self,
+        mock_open,
+        mock_trading,
+        mock_stock,
+        mock_classify,
+        mock_save,
+        mock_vix,
+        mock_em,
+        mock_pos,
+        mock_pos_table,
+        mock_mkt_table,
+    ):
         mock_classify.return_value = _make_regime(MarketRegime.RANGE, 0.3)
         mock_stock.return_value = _mock_stock_client()
 
         from common.config import IC_SPY_CONFIG
+
         result = _scan(IC_SPY_CONFIG, "IC_SPY")
 
         assert result["should_trade"] is False
@@ -154,6 +183,7 @@ class TestScanIntegration:
 
 
 # --- Helpers ---
+
 
 def _make_regime(regime: MarketRegime, confidence: float) -> RegimeResult:
     signals = RegimeSignals(
@@ -173,15 +203,20 @@ def _mock_stock_client():
     now = datetime.now(ET)
     idx = pd.date_range(
         now.replace(hour=9, minute=30, second=0, microsecond=0),
-        periods=n, freq='1min', tz='US/Eastern',
+        periods=n,
+        freq="1min",
+        tz="US/Eastern",
     )
-    bars_df = pd.DataFrame({
-        'open': [550.0 + i * 0.1 for i in range(n)],
-        'high': [550.5 + i * 0.1 for i in range(n)],
-        'low': [549.5 + i * 0.1 for i in range(n)],
-        'close': [550.2 + i * 0.1 for i in range(n)],
-        'volume': [10000] * n,
-    }, index=idx)
+    bars_df = pd.DataFrame(
+        {
+            "open": [550.0 + i * 0.1 for i in range(n)],
+            "high": [550.5 + i * 0.1 for i in range(n)],
+            "low": [549.5 + i * 0.1 for i in range(n)],
+            "close": [550.2 + i * 0.1 for i in range(n)],
+            "volume": [10000] * n,
+        },
+        index=idx,
+    )
 
     mock_response = MagicMock()
     mock_response.df = bars_df

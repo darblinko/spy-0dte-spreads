@@ -1,21 +1,31 @@
 """Lambda functions (Container Image) for premium-selling."""
 
 from aws_cdk import (
-    Stack, Duration, Size,
-    aws_lambda as _lambda,
+    Duration,
+    Stack,
+)
+from aws_cdk import (
     aws_iam as iam,
+)
+from aws_cdk import (
+    aws_lambda as _lambda,
 )
 from constructs import Construct
 
-from .storage_stack import StorageStack
 from .observability_stack import ObservabilityStack
+from .storage_stack import StorageStack
 
 
 class ComputeStack(Stack):
-    def __init__(self, scope: Construct, id: str, *,
-                 storage: StorageStack,
-                 observability: ObservabilityStack,
-                 **kwargs):
+    def __init__(
+        self,
+        scope: Construct,
+        id: str,
+        *,
+        storage: StorageStack,
+        observability: ObservabilityStack,
+        **kwargs,
+    ):
         super().__init__(scope, id, **kwargs)
 
         # Shared environment variables
@@ -32,7 +42,8 @@ class ComputeStack(Stack):
 
         # --- Scanner Lambda ---
         self.scanner_fn = _lambda.DockerImageFunction(
-            self, "ScannerFn",
+            self,
+            "ScannerFn",
             function_name="premium-scanner",
             code=_lambda.DockerImageCode.from_image_asset(
                 src_path,
@@ -47,7 +58,8 @@ class ComputeStack(Stack):
 
         # --- Executor Lambda ---
         self.executor_fn = _lambda.DockerImageFunction(
-            self, "ExecutorFn",
+            self,
+            "ExecutorFn",
             function_name="premium-executor",
             code=_lambda.DockerImageCode.from_image_asset(
                 src_path,
@@ -62,7 +74,8 @@ class ComputeStack(Stack):
 
         # --- Monitor Lambda ---
         self.monitor_fn = _lambda.DockerImageFunction(
-            self, "MonitorFn",
+            self,
+            "MonitorFn",
             function_name="premium-monitor",
             code=_lambda.DockerImageCode.from_image_asset(
                 src_path,
@@ -77,7 +90,8 @@ class ComputeStack(Stack):
 
         # --- Closer Lambda ---
         self.closer_fn = _lambda.DockerImageFunction(
-            self, "CloserFn",
+            self,
+            "CloserFn",
             function_name="premium-closer",
             code=_lambda.DockerImageCode.from_image_asset(
                 src_path,
@@ -92,7 +106,8 @@ class ComputeStack(Stack):
 
         # --- Reconciler Lambda ---
         self.reconciler_fn = _lambda.DockerImageFunction(
-            self, "ReconcilerFn",
+            self,
+            "ReconcilerFn",
             function_name="premium-reconciler",
             code=_lambda.DockerImageCode.from_image_asset(
                 src_path,
@@ -107,8 +122,11 @@ class ComputeStack(Stack):
 
         # Grant permissions
         all_fns = [
-            self.scanner_fn, self.executor_fn,
-            self.monitor_fn, self.closer_fn, self.reconciler_fn,
+            self.scanner_fn,
+            self.executor_fn,
+            self.monitor_fn,
+            self.closer_fn,
+            self.reconciler_fn,
         ]
 
         for fn in all_fns:

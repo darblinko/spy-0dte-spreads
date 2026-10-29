@@ -6,19 +6,22 @@ import sys
 import pandas as pd
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../src"))
 
-from market.opening_range import compute_opening_range, classify_or_breakout, OpeningRange
+from market.opening_range import OpeningRange, classify_or_breakout, compute_opening_range
 
 
-def _make_bars(highs, lows, closes, start='2026-04-04 09:30'):
-    return pd.DataFrame({
-        'open': closes,
-        'high': highs,
-        'low': lows,
-        'close': closes,
-        'volume': [1000] * len(closes),
-    }, index=pd.date_range(start, periods=len(closes), freq='1min', tz='US/Eastern'))
+def _make_bars(highs, lows, closes, start="2026-04-04 09:30"):
+    return pd.DataFrame(
+        {
+            "open": closes,
+            "high": highs,
+            "low": lows,
+            "close": closes,
+            "volume": [1000] * len(closes),
+        },
+        index=pd.date_range(start, periods=len(closes), freq="1min", tz="US/Eastern"),
+    )
 
 
 class TestComputeOpeningRange:
@@ -35,7 +38,7 @@ class TestComputeOpeningRange:
         assert or_result.midpoint == 524.5
 
     def test_empty_bars(self):
-        bars = pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume'])
+        bars = pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
         assert compute_opening_range(bars) is None
 
     def test_single_bar(self):

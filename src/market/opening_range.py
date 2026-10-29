@@ -1,7 +1,6 @@
 """Opening Range (OR) breakout detection from first 15 minutes of trading."""
 
 from dataclasses import dataclass
-from typing import Optional
 
 import pandas as pd
 
@@ -14,7 +13,7 @@ class OpeningRange:
     width: float
 
 
-def compute_opening_range(bars: pd.DataFrame, minutes: int = 15) -> Optional[OpeningRange]:
+def compute_opening_range(bars: pd.DataFrame, minutes: int = 15) -> OpeningRange | None:
     """Compute the opening range from the first N minutes of bars.
 
     Args:
@@ -35,8 +34,8 @@ def compute_opening_range(bars: pd.DataFrame, minutes: int = 15) -> Optional[Ope
     if or_bars.empty:
         return None
 
-    or_high = float(or_bars['high'].max())
-    or_low = float(or_bars['low'].min())
+    or_high = float(or_bars["high"].max())
+    or_low = float(or_bars["low"].min())
     return OpeningRange(
         high=or_high,
         low=or_low,

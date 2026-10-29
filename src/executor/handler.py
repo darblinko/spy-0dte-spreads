@@ -7,41 +7,38 @@ strategy layer, submits orders to Alpaca, and records the position.
 
 import logging
 from datetime import datetime
-from typing import Optional, Union
 from zoneinfo import ZoneInfo
 
 from alpaca.trading.enums import OrderClass, PositionIntent
 from alpaca.trading.requests import (
     LimitOrderRequest,
     OptionLegRequest,
-    OrderSide,
     TimeInForce,
 )
 
 from common.alpaca_clients import (
-    create_trading_client,
     create_options_data_client,
+    create_trading_client,
 )
 from common.config import (
     get_config,
     get_positions_table,
-    get_trades_table,
-    get_sns_trade_topic,
     get_sns_error_topic,
+    get_sns_trade_topic,
+    get_trades_table,
 )
 from common.dynamo_io import put_position, record_trade
 from common.models import (
-    SpreadPosition,
-    SpreadLeg,
-    TradeRecord,
-    SpreadType,
-    PositionStatus,
     MarketRegime,
+    SpreadLeg,
+    SpreadPosition,
+    SpreadType,
+    TradeRecord,
     generate_spread_id,
 )
-from common.notifications import publish_trade_alert, publish_error_alert
-from strategy.iron_condor import build_iron_condor, IronCondorResult
-from strategy.credit_spread import build_credit_spread, CreditSpreadResult
+from common.notifications import publish_error_alert, publish_trade_alert
+from strategy.credit_spread import CreditSpreadResult, build_credit_spread
+from strategy.iron_condor import IronCondorResult, build_iron_condor
 from strategy.strike_selection import OptionQuote
 
 logger = logging.getLogger(__name__)
@@ -93,9 +90,7 @@ def _execute(config, scan_result: dict) -> dict:
     expected_move = scan_result["expected_move"]
 
     # Fetch 0DTE options chain
-    put_chain, call_chain = _fetch_options_chain(
-        config.secret_name, spy_price
-    )
+    put_chain, call_chain = _fetch_options_chain(config.secret_name, spy_price)
 
     # Build spread based on regime
     spread_result = _build_spread_for_regime(
@@ -188,9 +183,13 @@ def _execute(config, scan_result: dict) -> dict:
     # Notify
     topic = get_sns_trade_topic()
     publish_trade_alert(
-        topic, strategy_name, "OPEN",
-        position.spread_id, spread_type_str,
-        spread_result.net_credit, config.underlying,
+        topic,
+        strategy_name,
+        "OPEN",
+        position.spread_id,
+        spread_type_str,
+        spread_result.net_credit,
+        config.underlying,
     )
 
     return {
@@ -205,31 +204,42 @@ def _execute(config, scan_result: dict) -> dict:
     }
 
 
-def _build_spread_for_regime(regime: str,
-                             put_chain: list[OptionQuote],
-                             call_chain: list[OptionQuote],
-                             delta_min: float,
-                             delta_max: float,
-                             spread_width: float,
-                             min_credit: float) -> Optional[Union[IronCondorResult, CreditSpreadResult]]:
+def _build_spread_for_regime(
+    regime: str,
+    put_chain: list[OptionQuote],
+    call_chain: list[OptionQuote],
+    delta_min: float,
+    delta_max: float,
+    spread_width: float,
+    min_credit: float,
+) -> IronCondorResult | CreditSpreadResult | None:
     """Build the appropriate spread type for the detected regime."""
     if regime == "range":
         return build_iron_condor(
-            put_chain, call_chain,
-            delta_min, delta_max, spread_width, min_credit,
+            put_chain,
+            call_chain,
+            delta_min,
+            delta_max,
+            spread_width,
+            min_credit,
         )
     elif regime in ("uptrend", "downtrend"):
         regime_enum = MarketRegime(regime)
         return build_credit_spread(
-            regime_enum, put_chain, call_chain,
-            delta_min, delta_max, spread_width, min_credit,
+            regime_enum,
+            put_chain,
+            call_chain,
+            delta_min,
+            delta_max,
+            spread_width,
+            min_credit,
         )
     return None
 
 
-def _compute_risk_levels(net_credit: float,
-                         stop_loss_multiplier: float,
-                         take_profit_pct: float) -> tuple[float, float]:
+def _compute_risk_levels(
+    net_credit: float, stop_loss_multiplier: float, take_profit_pct: float
+) -> tuple[float, float]:
     """Compute stop loss and take profit prices.
 
     Args:
@@ -245,12 +255,18 @@ def _compute_risk_levels(net_credit: float,
     return stop_loss, take_profit
 
 
-def _build_position_from_ic(ic_result: IronCondorResult,
-                            strategy: str, underlying: str,
-                            expiration: str, spy_price: float,
-                            vix: float, expected_move: float,
-                            regime: str, stop_loss: float,
-                            take_profit: float) -> SpreadPosition:
+def _build_position_from_ic(
+    ic_result: IronCondorResult,
+    strategy: str,
+    underlying: str,
+    expiration: str,
+    spy_price: float,
+    vix: float,
+    expected_move: float,
+    regime: str,
+    stop_loss: float,
+    take_profit: float,
+) -> SpreadPosition:
     """Create a SpreadPosition from an IronCondorResult."""
     spread_id = generate_spread_id()
     now_iso = datetime.now(ET).isoformat()
@@ -289,12 +305,18 @@ def _build_position_from_ic(ic_result: IronCondorResult,
     return position
 
 
-def _build_position_from_cs(cs_result: CreditSpreadResult,
-                            strategy: str, underlying: str,
-                            expiration: str, spy_price: float,
-                            vix: float, expected_move: float,
-                            regime: str, stop_loss: float,
-                            take_profit: float) -> SpreadPosition:
+def _build_position_from_cs(
+    cs_result: CreditSpreadResult,
+    strategy: str,
+    underlying: str,
+    expiration: str,
+    spy_price: float,
+    vix: float,
+    expected_move: float,
+    regime: str,
+    stop_loss: float,
+    take_profit: float,
+) -> SpreadPosition:
     """Create a SpreadPosition from a CreditSpreadResult."""
     spread_id = generate_spread_id()
     now_iso = datetime.now(ET).isoformat()
@@ -333,8 +355,9 @@ def _build_position_from_cs(cs_result: CreditSpreadResult,
     return position
 
 
-def _fetch_options_chain(secret_name: str,
-                         spy_price: float) -> tuple[list[OptionQuote], list[OptionQuote]]:
+def _fetch_options_chain(
+    secret_name: str, spy_price: float
+) -> tuple[list[OptionQuote], list[OptionQuote]]:
     """Fetch 0DTE SPY options chain from Alpaca.
 
     Returns put and call chains as lists of OptionQuote, filtered to OTM only.
@@ -353,6 +376,7 @@ def _fetch_options_chain(secret_name: str,
         call_symbols = [f"SPY{today_str}C{s:08d}" for s in call_strikes]
 
         from alpaca.data.requests import OptionSnapshotRequest
+
         snapshot_request = OptionSnapshotRequest(
             symbol_or_symbols=put_symbols + call_symbols,
         )
@@ -408,14 +432,17 @@ def _submit_orders(secret_name: str, position: SpreadPosition) -> bool:
             opt_char = "C" if leg.option_type == "call" else "P"
             symbol = f"SPY{today_str}{opt_char}{int(leg.strike):08d}"
 
-            intent = (PositionIntent.SELL_TO_OPEN if leg.side == "sell"
-                      else PositionIntent.BUY_TO_OPEN)
+            intent = (
+                PositionIntent.SELL_TO_OPEN if leg.side == "sell" else PositionIntent.BUY_TO_OPEN
+            )
 
-            option_legs.append(OptionLegRequest(
-                symbol=symbol,
-                ratio_qty=leg.quantity,
-                position_intent=intent,
-            ))
+            option_legs.append(
+                OptionLegRequest(
+                    symbol=symbol,
+                    ratio_qty=leg.quantity,
+                    position_intent=intent,
+                )
+            )
 
         # Negative limit_price = credit received
         order_request = LimitOrderRequest(

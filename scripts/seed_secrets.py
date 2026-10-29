@@ -13,7 +13,6 @@ import sys
 
 import boto3
 
-
 SECRET_NAME = "premium/spy-api"
 
 
@@ -25,10 +24,12 @@ def main():
         print("Error: Set ALPACA_API_KEY and ALPACA_API_SECRET environment variables")
         sys.exit(1)
 
-    secret_value = json.dumps({
-        "api_key": api_key,
-        "api_secret": api_secret,
-    })
+    secret_value = json.dumps(
+        {
+            "api_key": api_key,
+            "api_secret": api_secret,
+        }
+    )
 
     client = boto3.client("secretsmanager")
 

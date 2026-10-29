@@ -1,9 +1,15 @@
 """S3 bucket and DynamoDB tables for premium-selling data."""
 
 from aws_cdk import (
-    Stack, RemovalPolicy, Duration,
-    aws_s3 as s3,
+    Duration,
+    RemovalPolicy,
+    Stack,
+)
+from aws_cdk import (
     aws_dynamodb as dynamodb,
+)
+from aws_cdk import (
+    aws_s3 as s3,
 )
 from constructs import Construct
 
@@ -14,7 +20,8 @@ class StorageStack(Stack):
 
         # S3 bucket for daily summaries
         self.bucket = s3.Bucket(
-            self, "DataBucket",
+            self,
+            "DataBucket",
             bucket_name=f"premium-selling-data-{self.account}",
             versioned=True,
             removal_policy=RemovalPolicy.RETAIN,
@@ -35,13 +42,16 @@ class StorageStack(Stack):
 
         # DynamoDB: Positions table (strategy + spread_id)
         self.positions_table = dynamodb.Table(
-            self, "PositionsTable",
+            self,
+            "PositionsTable",
             table_name="premium-positions",
             partition_key=dynamodb.Attribute(
-                name="strategy", type=dynamodb.AttributeType.STRING,
+                name="strategy",
+                type=dynamodb.AttributeType.STRING,
             ),
             sort_key=dynamodb.Attribute(
-                name="spread_id", type=dynamodb.AttributeType.STRING,
+                name="spread_id",
+                type=dynamodb.AttributeType.STRING,
             ),
             billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
             removal_policy=RemovalPolicy.RETAIN,
@@ -50,13 +60,16 @@ class StorageStack(Stack):
 
         # DynamoDB: Trades table (strategy + trade_id)
         self.trades_table = dynamodb.Table(
-            self, "TradesTable",
+            self,
+            "TradesTable",
             table_name="premium-trades",
             partition_key=dynamodb.Attribute(
-                name="strategy", type=dynamodb.AttributeType.STRING,
+                name="strategy",
+                type=dynamodb.AttributeType.STRING,
             ),
             sort_key=dynamodb.Attribute(
-                name="trade_id", type=dynamodb.AttributeType.STRING,
+                name="trade_id",
+                type=dynamodb.AttributeType.STRING,
             ),
             billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
             removal_policy=RemovalPolicy.RETAIN,
@@ -65,13 +78,16 @@ class StorageStack(Stack):
 
         # DynamoDB: Market State table (date + timestamp)
         self.market_state_table = dynamodb.Table(
-            self, "MarketStateTable",
+            self,
+            "MarketStateTable",
             table_name="premium-market-state",
             partition_key=dynamodb.Attribute(
-                name="date", type=dynamodb.AttributeType.STRING,
+                name="date",
+                type=dynamodb.AttributeType.STRING,
             ),
             sort_key=dynamodb.Attribute(
-                name="timestamp", type=dynamodb.AttributeType.STRING,
+                name="timestamp",
+                type=dynamodb.AttributeType.STRING,
             ),
             billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
             removal_policy=RemovalPolicy.DESTROY,

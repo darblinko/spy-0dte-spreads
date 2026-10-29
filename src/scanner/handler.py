@@ -5,9 +5,7 @@ workflow passes to the executor Lambda if a trade signal is present.
 """
 
 import logging
-from datetime import datetime, timedelta
-from typing import Optional
-
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import yfinance as yf
@@ -15,17 +13,21 @@ from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
 
 from common.alpaca_clients import (
-    create_stock_data_client,
     create_options_data_client,
+    create_stock_data_client,
     create_trading_client,
     is_market_open,
 )
-from common.config import get_config, get_market_state_table, get_positions_table
-from common.dynamo_io import put_market_state, get_positions
+from common.config import (
+    get_config,
+    get_market_state_table,
+    get_positions_table,
+    get_sns_error_topic,
+)
+from common.dynamo_io import get_positions, put_market_state
 from common.notifications import publish_error_alert
-from common.config import get_sns_error_topic
-from market.regime import classify_regime, RegimeResult
 from market.expected_move import compute_expected_move
+from market.regime import RegimeResult, classify_regime
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -112,7 +114,7 @@ def _scan(config, strategy_name: str) -> dict:
     )
 
     # Get expected move from ATM straddle
-    spy_price = float(bars_df['close'].iloc[-1])
+    spy_price = float(bars_df["close"].iloc[-1])
     expected_move = _fetch_expected_move(config.secret_name, spy_price)
 
     # Persist market state
@@ -173,7 +175,7 @@ def _fetch_vix() -> float:
         if hist.empty:
             logger.warning("VIX data empty, defaulting to 20.0")
             return 20.0
-        return float(hist['Close'].iloc[-1])
+        return float(hist["Close"].iloc[-1])
     except Exception:
         logger.warning("Failed to fetch VIX, defaulting to 20.0")
         return 20.0
@@ -196,9 +198,8 @@ def _fetch_expected_move(secret_name: str, spy_price: float) -> float:
 
         # Fetch latest quotes
         from alpaca.data.requests import OptionLatestQuoteRequest
-        quote_request = OptionLatestQuoteRequest(
-            symbol_or_symbols=[call_symbol, put_symbol]
-        )
+
+        quote_request = OptionLatestQuoteRequest(symbol_or_symbols=[call_symbol, put_symbol])
         quotes = options_client.get_option_latest_quote(quote_request)
 
         call_mid = (quotes[call_symbol].bid_price + quotes[call_symbol].ask_price) / 2
@@ -211,9 +212,9 @@ def _fetch_expected_move(secret_name: str, spy_price: float) -> float:
         return spy_price * 0.01  # ~1% as rough fallback
 
 
-def _save_market_state(now_et: datetime, regime: RegimeResult,
-                       spy_price: float, vix: float,
-                       expected_move: float) -> None:
+def _save_market_state(
+    now_et: datetime, regime: RegimeResult, spy_price: float, vix: float, expected_move: float
+) -> None:
     """Persist regime detection results to DynamoDB."""
     try:
         table = get_market_state_table()
@@ -234,11 +235,14 @@ def _save_market_state(now_et: datetime, regime: RegimeResult,
         logger.warning("Failed to save market state, continuing")
 
 
-def _no_trade(strategy_name: str, reason: str,
-              regime: Optional[RegimeResult] = None,
-              spy_price: float = 0.0,
-              vix_level: float = 0.0,
-              expected_move: float = 0.0) -> dict:
+def _no_trade(
+    strategy_name: str,
+    reason: str,
+    regime: RegimeResult | None = None,
+    spy_price: float = 0.0,
+    vix_level: float = 0.0,
+    expected_move: float = 0.0,
+) -> dict:
     result = {
         "should_trade": False,
         "strategy": strategy_name,

@@ -1,8 +1,9 @@
 """Expected move calculation from ATM straddle pricing."""
 
 
-def compute_expected_move(atm_call_price: float, atm_put_price: float,
-                          multiplier: float = 0.85) -> float:
+def compute_expected_move(
+    atm_call_price: float, atm_put_price: float, multiplier: float = 0.85
+) -> float:
     """Calculate the expected move from ATM straddle price.
 
     The expected move approximation is the ATM straddle price * multiplier.
@@ -33,9 +34,9 @@ def get_expected_range(underlying_price: float, expected_move: float) -> tuple:
     return (underlying_price - expected_move, underlying_price + expected_move)
 
 
-def is_strike_outside_expected_move(strike: float, underlying_price: float,
-                                     expected_move: float,
-                                     option_type: str) -> bool:
+def is_strike_outside_expected_move(
+    strike: float, underlying_price: float, expected_move: float, option_type: str
+) -> bool:
     """Check if a strike is outside the expected move.
 
     Args:

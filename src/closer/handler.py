@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 from common.config import get_config, get_positions_table, get_sns_error_topic
 from common.dynamo_io import get_all_open_positions
 from common.notifications import publish_error_alert
-from monitor.handler import _update_position_prices, _close_position
+from monitor.handler import _close_position, _update_position_prices
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -59,8 +59,9 @@ def _close_all() -> dict:
         logger.info(f"EOD close: {position.spread_id} pnl={target.unrealized_pnl:.2f}")
 
     now_et = datetime.now(ET)
-    logger.info(f"EOD closer finished at {now_et.strftime('%H:%M:%S ET')}: "
-                f"closed {closed_count} positions")
+    logger.info(
+        f"EOD closer finished at {now_et.strftime('%H:%M:%S ET')}: closed {closed_count} positions"
+    )
 
     return {
         "positions_closed": closed_count,

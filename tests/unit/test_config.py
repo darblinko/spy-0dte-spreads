@@ -1,17 +1,17 @@
 """Tests for premium-selling configuration."""
 
 import os
-import pytest
+import sys
 from dataclasses import FrozenInstanceError
 
-import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../src'))
+import pytest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../src"))
 
 from common.config import (
-    PremiumConfig,
-    IC_SPY_CONFIG,
-    CS_SPY_CONFIG,
     CONFIGS,
+    CS_SPY_CONFIG,
+    IC_SPY_CONFIG,
     get_config,
 )
 
@@ -83,29 +83,34 @@ class TestEnvironmentGetters:
     def test_get_s3_bucket(self):
         os.environ["S3_BUCKET"] = "test-bucket"
         from common.config import get_s3_bucket
+
         assert get_s3_bucket() == "test-bucket"
         del os.environ["S3_BUCKET"]
 
     def test_get_positions_table(self):
         os.environ["POSITIONS_TABLE"] = "test-positions"
         from common.config import get_positions_table
+
         assert get_positions_table() == "test-positions"
         del os.environ["POSITIONS_TABLE"]
 
     def test_get_trades_table(self):
         os.environ["TRADES_TABLE"] = "test-trades"
         from common.config import get_trades_table
+
         assert get_trades_table() == "test-trades"
         del os.environ["TRADES_TABLE"]
 
     def test_get_market_state_table(self):
         os.environ["MARKET_STATE_TABLE"] = "test-state"
         from common.config import get_market_state_table
+
         assert get_market_state_table() == "test-state"
         del os.environ["MARKET_STATE_TABLE"]
 
     def test_missing_env_var_raises(self):
         from common.config import get_s3_bucket
+
         if "S3_BUCKET" in os.environ:
             del os.environ["S3_BUCKET"]
         with pytest.raises(KeyError):

@@ -3,9 +3,9 @@
 import pytest
 
 from strategy.strike_selection import (
-    find_strike_by_delta,
-    find_spread_strikes,
     OptionQuote,
+    find_spread_strikes,
+    find_strike_by_delta,
 )
 
 

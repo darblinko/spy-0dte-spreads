@@ -1,7 +1,6 @@
 """Iron condor construction: sell put spread + call spread on range days."""
 
 from dataclasses import dataclass
-from typing import Optional
 
 from .strike_selection import OptionQuote, find_spread_strikes
 
@@ -9,28 +8,32 @@ from .strike_selection import OptionQuote, find_spread_strikes
 @dataclass(frozen=True)
 class SpreadLeg:
     """A single leg of a spread for construction purposes."""
+
     strike: float
     delta: float
     mid_price: float
-    option_type: str    # "put" or "call"
-    side: str           # "sell" or "buy"
+    option_type: str  # "put" or "call"
+    side: str  # "sell" or "buy"
 
 
 @dataclass(frozen=True)
 class IronCondorResult:
     """Result of iron condor construction."""
+
     legs: tuple[SpreadLeg, ...]
     net_credit: float
     max_loss: float
     spread_width: float
 
 
-def build_iron_condor(put_chain: list[OptionQuote],
-                      call_chain: list[OptionQuote],
-                      delta_min: float,
-                      delta_max: float,
-                      spread_width: float,
-                      min_credit: float) -> Optional[IronCondorResult]:
+def build_iron_condor(
+    put_chain: list[OptionQuote],
+    call_chain: list[OptionQuote],
+    delta_min: float,
+    delta_max: float,
+    spread_width: float,
+    min_credit: float,
+) -> IronCondorResult | None:
     """Build an iron condor from put and call chains.
 
     Sells a put spread below the market and a call spread above.
@@ -46,9 +49,7 @@ def build_iron_condor(put_chain: list[OptionQuote],
     Returns:
         IronCondorResult or None if construction fails.
     """
-    short_put, long_put = find_spread_strikes(
-        put_chain, delta_min, delta_max, spread_width, "put"
-    )
+    short_put, long_put = find_spread_strikes(put_chain, delta_min, delta_max, spread_width, "put")
     if short_put is None or long_put is None:
         return None
 
@@ -59,8 +60,7 @@ def build_iron_condor(put_chain: list[OptionQuote],
         return None
 
     net_credit = (
-        short_put.mid_price + short_call.mid_price
-        - long_put.mid_price - long_call.mid_price
+        short_put.mid_price + short_call.mid_price - long_put.mid_price - long_call.mid_price
     )
 
     if net_credit < min_credit:

@@ -1,9 +1,14 @@
 """SNS topics and CloudWatch dashboard for premium-selling."""
 
 from aws_cdk import (
-    Stack, Duration,
-    aws_sns as sns,
+    Duration,
+    Stack,
+)
+from aws_cdk import (
     aws_cloudwatch as cloudwatch,
+)
+from aws_cdk import (
+    aws_sns as sns,
 )
 from constructs import Construct
 
@@ -14,20 +19,23 @@ class ObservabilityStack(Stack):
 
         # SNS Topics
         self.trade_topic = sns.Topic(
-            self, "TradeAlerts",
+            self,
+            "TradeAlerts",
             topic_name="premium-trade-alerts",
             display_name="Premium Trade Alerts",
         )
 
         self.error_topic = sns.Topic(
-            self, "ErrorAlerts",
+            self,
+            "ErrorAlerts",
             topic_name="premium-error-alerts",
             display_name="Premium Error Alerts",
         )
 
         # CloudWatch Dashboard
         self.dashboard = cloudwatch.Dashboard(
-            self, "TradingDashboard",
+            self,
+            "TradingDashboard",
             dashboard_name="Premium-Selling-Dashboard",
         )
 

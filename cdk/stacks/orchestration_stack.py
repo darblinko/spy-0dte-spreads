@@ -9,11 +9,20 @@ Workflow:
 """
 
 from aws_cdk import (
-    Stack, Duration,
-    aws_stepfunctions as sfn,
-    aws_stepfunctions_tasks as sfn_tasks,
-    aws_scheduler as scheduler,
+    Duration,
+    Stack,
+)
+from aws_cdk import (
     aws_iam as iam,
+)
+from aws_cdk import (
+    aws_scheduler as scheduler,
+)
+from aws_cdk import (
+    aws_stepfunctions as sfn,
+)
+from aws_cdk import (
+    aws_stepfunctions_tasks as sfn_tasks,
 )
 from constructs import Construct
 
@@ -22,17 +31,23 @@ from .observability_stack import ObservabilityStack
 
 
 class OrchestrationStack(Stack):
-    def __init__(self, scope: Construct, id: str, *,
-                 compute: ComputeStack,
-                 observability: ObservabilityStack,
-                 **kwargs):
+    def __init__(
+        self,
+        scope: Construct,
+        id: str,
+        *,
+        compute: ComputeStack,
+        observability: ObservabilityStack,
+        **kwargs,
+    ):
         super().__init__(scope, id, **kwargs)
 
         # --- Step Function Tasks ---
 
         # Scanner: detect market regime for IC and CS strategies
         scan_ic = sfn_tasks.LambdaInvoke(
-            self, "ScanIC",
+            self,
+            "ScanIC",
             lambda_function=compute.scanner_fn,
             payload=sfn.TaskInput.from_object({"strategy": "IC_SPY"}),
             result_path="$.scanIC",
@@ -49,7 +64,8 @@ class OrchestrationStack(Stack):
         )
 
         scan_cs = sfn_tasks.LambdaInvoke(
-            self, "ScanCS",
+            self,
+            "ScanCS",
             lambda_function=compute.scanner_fn,
             payload=sfn.TaskInput.from_object({"strategy": "CS_SPY"}),
             result_path="$.scanCS",
@@ -67,7 +83,8 @@ class OrchestrationStack(Stack):
 
         # Executor: build and submit spreads
         execute_ic = sfn_tasks.LambdaInvoke(
-            self, "ExecuteIC",
+            self,
+            "ExecuteIC",
             lambda_function=compute.executor_fn,
             payload=sfn.TaskInput.from_json_path_at("$.scanIC.Payload"),
             result_path="$.executeIC",
@@ -80,7 +97,8 @@ class OrchestrationStack(Stack):
         )
 
         execute_cs = sfn_tasks.LambdaInvoke(
-            self, "ExecuteCS",
+            self,
+            "ExecuteCS",
             lambda_function=compute.executor_fn,
             payload=sfn.TaskInput.from_json_path_at("$.scanCS.Payload"),
             result_path="$.executeCS",
@@ -110,14 +128,14 @@ class OrchestrationStack(Stack):
         ).otherwise(skip_cs)
 
         # Scan parallel, then conditionally execute
-        scan_parallel = sfn.Parallel(self, "ScanParallel",
-                                     result_path="$.scanResults")
+        scan_parallel = sfn.Parallel(self, "ScanParallel", result_path="$.scanResults")
         scan_parallel.branch(scan_ic.next(ic_branch))
         scan_parallel.branch(scan_cs.next(cs_branch))
 
         # --- Entry Workflow: scan + execute ---
         self.entry_workflow = sfn.StateMachine(
-            self, "EntryWorkflow",
+            self,
+            "EntryWorkflow",
             state_machine_name="premium-entry-workflow",
             definition_body=sfn.DefinitionBody.from_chainable(scan_parallel),
             timeout=Duration.minutes(15),
@@ -125,7 +143,8 @@ class OrchestrationStack(Stack):
 
         # --- Monitor Workflow: check positions ---
         monitor_task = sfn_tasks.LambdaInvoke(
-            self, "MonitorPositions",
+            self,
+            "MonitorPositions",
             lambda_function=compute.monitor_fn,
             result_path="$.monitorResult",
             retry_on_service_exceptions=True,
@@ -137,7 +156,8 @@ class OrchestrationStack(Stack):
         )
 
         self.monitor_workflow = sfn.StateMachine(
-            self, "MonitorWorkflow",
+            self,
+            "MonitorWorkflow",
             state_machine_name="premium-monitor-workflow",
             definition_body=sfn.DefinitionBody.from_chainable(monitor_task),
             timeout=Duration.minutes(5),
@@ -145,7 +165,8 @@ class OrchestrationStack(Stack):
 
         # --- EventBridge Scheduler ---
         scheduler_role = iam.Role(
-            self, "SchedulerRole",
+            self,
+            "SchedulerRole",
             assumed_by=iam.ServicePrincipal("scheduler.amazonaws.com"),
         )
         self.entry_workflow.grant_start_execution(scheduler_role)
@@ -155,7 +176,8 @@ class OrchestrationStack(Stack):
 
         # Entry: 10:00 AM ET -- scan market + execute trades
         scheduler.CfnSchedule(
-            self, "EntrySchedule",
+            self,
+            "EntrySchedule",
             schedule_expression="cron(0 10 ? * MON-FRI *)",
             schedule_expression_timezone="America/New_York",
             flexible_time_window=scheduler.CfnSchedule.FlexibleTimeWindowProperty(
@@ -174,7 +196,8 @@ class OrchestrationStack(Stack):
         # with a Step Functions guard. For now: run every 5 min, the monitor
         # Lambda itself is idempotent and cheap when no positions exist.
         scheduler.CfnSchedule(
-            self, "MonitorSchedule",
+            self,
+            "MonitorSchedule",
             schedule_expression="rate(5 minutes)",
             flexible_time_window=scheduler.CfnSchedule.FlexibleTimeWindowProperty(
                 mode="OFF",
@@ -189,7 +212,8 @@ class OrchestrationStack(Stack):
 
         # Closer: 3:45 PM ET -- force close all positions
         scheduler.CfnSchedule(
-            self, "CloserSchedule",
+            self,
+            "CloserSchedule",
             schedule_expression="cron(45 15 ? * MON-FRI *)",
             schedule_expression_timezone="America/New_York",
             flexible_time_window=scheduler.CfnSchedule.FlexibleTimeWindowProperty(
@@ -205,7 +229,8 @@ class OrchestrationStack(Stack):
 
         # Reconciler: 4:15 PM ET -- daily summary
         scheduler.CfnSchedule(
-            self, "ReconcilerSchedule",
+            self,
+            "ReconcilerSchedule",
             schedule_expression="cron(15 16 ? * MON-FRI *)",
             schedule_expression_timezone="America/New_York",
             flexible_time_window=scheduler.CfnSchedule.FlexibleTimeWindowProperty(
