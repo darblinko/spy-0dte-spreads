@@ -70,3 +70,87 @@ def test_observability_has_two_topics_and_a_dashboard(templates):
     observability = templates["observability"]
     observability.resource_count_is("AWS::SNS::Topic", 2)
     observability.resource_count_is("AWS::CloudWatch::Dashboard", 1)
+
+
+def _function_ids(template: Template) -> dict[str, str]:
+    functions = template.find_resources("AWS::Lambda::Function")
+    return {props["Properties"]["FunctionName"]: logical for logical, props in functions.items()}
+
+
+def _granted(template: Template, function_name: str) -> set[tuple[str, str]]:
+    """(action, resource kind) pairs in the policies attached to the function's role."""
+    function = template.find_resources("AWS::Lambda::Function")[
+        _function_ids(template)[function_name]
+    ]
+    role = function["Properties"]["Role"]["Fn::GetAtt"][0]
+    kinds = ["PositionsTable", "TradesTable", "MarketStateTable", "DataBucket", "BrokerSecret"]
+    kinds += ["TradeAlerts", "ErrorAlerts"]
+    grants = set()
+    for policy in template.find_resources("AWS::IAM::Policy").values():
+        if {"Ref": role} not in policy["Properties"]["Roles"]:
+            continue
+        for statement in policy["Properties"]["PolicyDocument"]["Statement"]:
+            actions = statement["Action"]
+            actions = actions if isinstance(actions, list) else [actions]
+            resource_text = str(statement["Resource"])
+            matched = [k for k in kinds if k in resource_text] or [resource_text]
+            if "secretsmanager" in str(actions) and "premium/spy-api" in resource_text:
+                matched = ["BrokerSecret"]
+            grants |= {(action, kind) for action in actions for kind in matched}
+    return grants
+
+
+def test_secret_grant_matches_the_strategy_configuration():
+    from stacks.compute_stack import BROKER_SECRET_NAME
+
+    from common.config import CS_SPY_CONFIG, IC_SPY_CONFIG
+
+    assert IC_SPY_CONFIG.secret_name == CS_SPY_CONFIG.secret_name == BROKER_SECRET_NAME
+
+
+def test_every_function_reads_only_the_broker_secret(templates):
+    for function_name in _function_ids(templates["compute"]):
+        grants = _granted(templates["compute"], function_name)
+        secret_grants = {kind for action, kind in grants if action.startswith("secretsmanager")}
+        assert secret_grants == {"BrokerSecret"}, function_name
+
+
+def test_scanner_cannot_change_positions_or_trades(templates):
+    grants = _granted(templates["compute"], "premium-scanner")
+    assert ("dynamodb:Query", "PositionsTable") in grants
+    assert ("dynamodb:PutItem", "MarketStateTable") in grants
+    assert not {kind for _, kind in grants} & {"TradesTable", "DataBucket", "TradeAlerts"}
+    assert ("dynamodb:PutItem", "PositionsTable") not in grants
+
+
+def test_reconciler_reads_trading_state_and_writes_only_the_summary(templates):
+    grants = _granted(templates["compute"], "premium-reconciler")
+    writes = {"dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem"}
+    tables = {"PositionsTable", "TradesTable", "MarketStateTable"}
+    assert not {(a, k) for a, k in grants if a in writes and k in tables}
+    assert ("s3:PutObject", "DataBucket") in grants
+    assert ("s3:DeleteObject*", "DataBucket") not in grants
+
+
+def test_trading_functions_write_positions_and_trades(templates):
+    for function_name in ["premium-executor", "premium-monitor", "premium-closer"]:
+        grants = _granted(templates["compute"], function_name)
+        assert ("dynamodb:PutItem", "PositionsTable") in grants
+        assert ("dynamodb:PutItem", "TradesTable") in grants
+        assert "MarketStateTable" not in {kind for _, kind in grants}
+        assert "DataBucket" not in {kind for _, kind in grants}
+
+
+def test_metric_publishing_is_limited_to_the_dashboard_namespace(templates):
+    policies = templates["compute"].find_resources("AWS::IAM::Policy")
+    statements = [
+        s
+        for policy in policies.values()
+        for s in policy["Properties"]["PolicyDocument"]["Statement"]
+        if s["Action"] == "cloudwatch:PutMetricData"
+    ]
+    assert len(statements) == 4
+    assert all(
+        s["Condition"] == {"StringEquals": {"cloudwatch:namespace": "Premium/Trading"}}
+        for s in statements
+    )

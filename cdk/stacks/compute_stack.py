@@ -12,12 +12,18 @@ from aws_cdk import (
 from aws_cdk import (
     aws_lambda as _lambda,
 )
+from aws_cdk import (
+    aws_secretsmanager as secretsmanager,
+)
 from constructs import Construct
 
 from .observability_stack import ObservabilityStack
 from .storage_stack import StorageStack
 
 SRC_DIR = Path(__file__).resolve().parents[2] / "src"
+# Matches StrategyConfig.secret_name in src/common/config.py.
+BROKER_SECRET_NAME = "premium/spy-api"
+METRIC_NAMESPACE = "Premium/Trading"
 
 
 class ComputeStack(Stack):
@@ -124,29 +130,40 @@ class ComputeStack(Stack):
             tracing=_lambda.Tracing.ACTIVE,
         )
 
-        # Grant permissions
-        all_fns = [
-            self.scanner_fn,
-            self.executor_fn,
-            self.monitor_fn,
-            self.closer_fn,
-            self.reconciler_fn,
-        ]
+        self._grant_least_privilege(storage, observability)
+
+    def _grant_least_privilege(
+        self, storage: StorageStack, observability: ObservabilityStack
+    ) -> None:
+        """Grant each function only the tables, topics and secret its handler uses."""
+        broker_secret = secretsmanager.Secret.from_secret_name_v2(
+            self, "BrokerSecret", BROKER_SECRET_NAME
+        )
+        trading_fns = [self.executor_fn, self.monitor_fn, self.closer_fn]
+        all_fns = [self.scanner_fn, *trading_fns, self.reconciler_fn]
 
         for fn in all_fns:
-            storage.positions_table.grant_read_write_data(fn)
-            storage.trades_table.grant_read_write_data(fn)
-            storage.market_state_table.grant_read_write_data(fn)
-            storage.bucket.grant_read_write(fn)
-            observability.trade_topic.grant_publish(fn)
+            broker_secret.grant_read(fn)
             observability.error_topic.grant_publish(fn)
 
-            # Secrets Manager access for Alpaca API credentials
-            fn.add_to_role_policy(
-                iam.PolicyStatement(
-                    actions=["secretsmanager:GetSecretValue"],
-                    resources=[
-                        f"arn:aws:secretsmanager:{self.region}:{self.account}:secret:premium/*",
-                    ],
-                )
-            )
+        storage.positions_table.grant_read_data(self.scanner_fn)
+        storage.market_state_table.grant_write_data(self.scanner_fn)
+
+        for fn in trading_fns:
+            storage.positions_table.grant_read_write_data(fn)
+            storage.trades_table.grant_read_write_data(fn)
+            observability.trade_topic.grant_publish(fn)
+
+        storage.positions_table.grant_read_data(self.reconciler_fn)
+        storage.trades_table.grant_read_data(self.reconciler_fn)
+        storage.market_state_table.grant_read_data(self.reconciler_fn)
+        storage.bucket.grant_put(self.reconciler_fn)
+        observability.trade_topic.grant_publish(self.reconciler_fn)
+
+        metric_policy = iam.PolicyStatement(
+            actions=["cloudwatch:PutMetricData"],
+            resources=["*"],
+            conditions={"StringEquals": {"cloudwatch:namespace": METRIC_NAMESPACE}},
+        )
+        for fn in [self.scanner_fn, self.monitor_fn, self.closer_fn, self.reconciler_fn]:
+            fn.add_to_role_policy(metric_policy)
