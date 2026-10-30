@@ -8,6 +8,7 @@ import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+import pandas as pd
 import yfinance as yf
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
@@ -91,13 +92,13 @@ def _scan(config, strategy_name: str) -> dict:
 
     stock_client = create_stock_data_client(config.secret_name)
     bars_request = StockBarsRequest(
-        symbol_or_symbols="SPY",
+        symbol_or_symbols=config.underlying,
         timeframe=TimeFrame.Minute,
         start=market_open_time,
         end=now_et,
     )
     bars_response = stock_client.get_stock_bars(bars_request)
-    bars_df = bars_response.df
+    bars_df = _bars_for_symbol(bars_response.df, config.underlying)
 
     if bars_df.empty or len(bars_df) < 5:
         return _no_trade(strategy_name, "insufficient_bar_data")
@@ -154,6 +155,19 @@ def _scan(config, strategy_name: str) -> dict:
         "vix_level": round(vix_level, 2),
         "reason": f"trade_signal: {regime_result.regime.value} ({regime_result.confidence:.2f})",
     }
+
+
+def _bars_for_symbol(bars_df: pd.DataFrame, symbol: str) -> pd.DataFrame:
+    """Return one symbol's bars indexed by timestamp in ascending order.
+
+    BarSet.df from alpaca-py is indexed by (symbol, timestamp). The market
+    functions expect a plain timestamp index.
+    """
+    if isinstance(bars_df.index, pd.MultiIndex):
+        if symbol not in bars_df.index.get_level_values("symbol"):
+            return bars_df.iloc[0:0].droplevel("symbol")
+        bars_df = bars_df.xs(symbol, level="symbol")
+    return bars_df.sort_index()
 
 
 def _check_regime_alignment(strategy_name: str, regime: RegimeResult) -> bool:
