@@ -20,6 +20,7 @@ from common.config import (
 from common.dynamo_io import get_all_open_positions, put_position, record_trade
 from common.models import PositionStatus, SpreadPosition, TradeRecord
 from common.notifications import publish_error_alert, publish_trade_alert
+from common.option_symbols import build_option_symbol
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -103,12 +104,11 @@ def _update_position_prices(secret_name: str, position: SpreadPosition) -> Sprea
     try:
         options_client = create_options_data_client(secret_name)
         legs = position.get_legs()
-        today_str = datetime.now(ET).strftime("%y%m%d")
-
-        symbols = []
-        for leg in legs:
-            opt_char = "C" if leg.option_type == "call" else "P"
-            symbols.append(f"SPY{today_str}{opt_char}{int(leg.strike):08d}")
+        today = datetime.now(ET).date()
+        symbols = [
+            build_option_symbol(position.underlying, today, leg.option_type, leg.strike)
+            for leg in legs
+        ]
 
         from alpaca.data.requests import OptionLatestQuoteRequest
 
@@ -228,12 +228,11 @@ def _submit_close_orders(secret_name: str, position: SpreadPosition) -> bool:
 
         trading_client = create_trading_client(secret_name)
         legs = position.get_legs()
-        today_str = datetime.now(ET).strftime("%y%m%d")
+        today = datetime.now(ET).date()
 
         option_legs = []
         for leg in legs:
-            opt_char = "C" if leg.option_type == "call" else "P"
-            symbol = f"SPY{today_str}{opt_char}{int(leg.strike):08d}"
+            symbol = build_option_symbol(position.underlying, today, leg.option_type, leg.strike)
 
             # Reverse each leg: a sold leg is bought to close, a bought leg is sold to close
             intent = (

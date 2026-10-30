@@ -6,7 +6,7 @@ strategy layer, submits orders to Alpaca, and records the position.
 """
 
 import logging
-from datetime import datetime
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 from alpaca.trading.enums import OrderClass, PositionIntent
@@ -37,6 +37,7 @@ from common.models import (
     generate_spread_id,
 )
 from common.notifications import publish_error_alert, publish_trade_alert
+from common.option_symbols import build_option_symbol, parse_option_symbol
 from strategy.credit_spread import CreditSpreadResult, build_credit_spread
 from strategy.iron_condor import IronCondorResult, build_iron_condor
 from strategy.strike_selection import OptionQuote
@@ -274,7 +275,9 @@ def _build_position_from_ic(
     legs = [
         SpreadLeg(
             leg_id=f"{spread_id}-{i}",
-            contract_id="",  # Filled after order submission
+            contract_id=build_option_symbol(
+                underlying, date.fromisoformat(expiration), leg.option_type, leg.strike
+            ),
             side=leg.side,
             option_type=leg.option_type,
             strike=leg.strike,
@@ -324,7 +327,9 @@ def _build_position_from_cs(
     legs = [
         SpreadLeg(
             leg_id=f"{spread_id}-{i}",
-            contract_id="",
+            contract_id=build_option_symbol(
+                underlying, date.fromisoformat(expiration), leg.option_type, leg.strike
+            ),
             side=leg.side,
             option_type=leg.option_type,
             strike=leg.strike,
@@ -364,16 +369,15 @@ def _fetch_options_chain(
     """
     try:
         options_client = create_options_data_client(secret_name)
-        today_str = datetime.now(ET).strftime("%y%m%d")
+        today = datetime.now(ET).date()
 
         # Generate OTM strike range: +/- 15 points from current price
         atm = round(spy_price)
         put_strikes = range(atm - 15, atm)
         call_strikes = range(atm + 1, atm + 16)
 
-        # Build option symbols
-        put_symbols = [f"SPY{today_str}P{s:08d}" for s in put_strikes]
-        call_symbols = [f"SPY{today_str}C{s:08d}" for s in call_strikes]
+        put_symbols = [build_option_symbol("SPY", today, "put", s) for s in put_strikes]
+        call_symbols = [build_option_symbol("SPY", today, "call", s) for s in call_strikes]
 
         from alpaca.data.requests import OptionSnapshotRequest
 
@@ -389,18 +393,19 @@ def _fetch_options_chain(
             if not snap.latest_quote or not snap.greeks:
                 continue
 
+            contract = parse_option_symbol(symbol)
             quote = OptionQuote(
-                strike=float(symbol[-8:]),
+                strike=contract.strike,
                 delta=snap.greeks.delta if snap.greeks.delta else 0.0,
                 bid=snap.latest_quote.bid_price or 0.0,
                 ask=snap.latest_quote.ask_price or 0.0,
-                option_type="put" if "P" in symbol[9:] else "call",
+                option_type=contract.option_type,
             )
 
             if quote.bid <= 0 or quote.ask <= 0:
                 continue
 
-            if "P" in symbol[9:]:
+            if contract.option_type == "put":
                 put_chain.append(quote)
             else:
                 call_chain.append(quote)
@@ -424,13 +429,11 @@ def _submit_orders(secret_name: str, position: SpreadPosition) -> bool:
     """
     try:
         trading_client = create_trading_client(secret_name)
-        today_str = datetime.now(ET).strftime("%y%m%d")
         legs = position.get_legs()
 
         option_legs = []
         for leg in legs:
-            opt_char = "C" if leg.option_type == "call" else "P"
-            symbol = f"SPY{today_str}{opt_char}{int(leg.strike):08d}"
+            symbol = leg.contract_id
 
             intent = (
                 PositionIntent.SELL_TO_OPEN if leg.side == "sell" else PositionIntent.BUY_TO_OPEN

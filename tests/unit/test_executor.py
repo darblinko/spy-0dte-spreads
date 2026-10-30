@@ -284,3 +284,21 @@ class TestExecuteIntegration:
 
         assert result["executed"] is False
         assert "no_spread" in result["reason"]
+
+
+class TestOptionSymbols:
+    def test_position_legs_carry_occ_symbols(self):
+        pos = _build_position_from_cs(
+            cs_result=_cs_result(),
+            strategy="CS_SPY",
+            underlying="SPY",
+            expiration="2026-04-04",
+            spy_price=550.0,
+            vix=18.5,
+            expected_move=3.5,
+            regime="uptrend",
+            stop_loss=1.0,
+            take_profit=0.25,
+        )
+        for leg in pos.get_legs():
+            assert leg.contract_id == f"SPY260404P{int(leg.strike * 1000):08d}"

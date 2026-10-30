@@ -26,6 +26,7 @@ from common.config import (
 )
 from common.dynamo_io import get_positions, put_market_state
 from common.notifications import publish_error_alert
+from common.option_symbols import build_option_symbol
 from market.expected_move import compute_expected_move
 from market.regime import RegimeResult, classify_regime
 
@@ -191,10 +192,9 @@ def _fetch_expected_move(secret_name: str, spy_price: float) -> float:
         options_client = create_options_data_client(secret_name)
         atm_strike = round(spy_price)
 
-        # Get today's expiration
-        today_str = datetime.now(ET).strftime("%y%m%d")
-        call_symbol = f"SPY{today_str}C{atm_strike:08.0f}"
-        put_symbol = f"SPY{today_str}P{atm_strike:08.0f}"
+        today = datetime.now(ET).date()
+        call_symbol = build_option_symbol("SPY", today, "call", atm_strike)
+        put_symbol = build_option_symbol("SPY", today, "put", atm_strike)
 
         # Fetch latest quotes
         from alpaca.data.requests import OptionLatestQuoteRequest
