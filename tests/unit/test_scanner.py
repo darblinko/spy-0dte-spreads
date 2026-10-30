@@ -222,3 +222,18 @@ def _mock_stock_client():
     mock_response.df = bars_df
     client.get_stock_bars.return_value = mock_response
     return client
+
+
+class TestHandlerFailures:
+    def test_operational_failure_raises_after_the_alert(self):
+        import pytest
+
+        from scanner import handler as scanner
+
+        with (
+            patch.object(scanner, "_scan", side_effect=ConnectionError("data API unavailable")),
+            patch.object(scanner, "_try_error_alert") as alert,
+            pytest.raises(ConnectionError),
+        ):
+            scanner.handler({"strategy": "IC_SPY"}, None)
+        alert.assert_called_once()

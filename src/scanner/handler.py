@@ -56,6 +56,8 @@ def handler(event: dict, context) -> dict:
         - strategy: str
         - scan_id: str (only when should_trade is true)
         - reason: str (why we're trading or not)
+
+        Failures raise after the alert, so Step Functions retries the scan.
     """
     strategy_name = event.get("strategy", "IC_SPY")
     config = get_config(strategy_name)
@@ -65,11 +67,7 @@ def handler(event: dict, context) -> dict:
     except Exception as e:
         logger.exception(f"Scanner failed for {strategy_name}")
         _try_error_alert(strategy_name, str(e))
-        return {
-            "should_trade": False,
-            "strategy": strategy_name,
-            "reason": f"scanner_error: {e}",
-        }
+        raise
 
 
 def _scan(config, strategy_name: str) -> dict:
