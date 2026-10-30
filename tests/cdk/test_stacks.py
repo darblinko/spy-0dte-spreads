@@ -207,3 +207,25 @@ def test_summary_versions_expire(templates):
     assert summaries["NoncurrentVersionExpiration"]["NoncurrentDays"] == 30
     assert "Transitions" not in summaries
     assert rules["RemoveExpiredDeleteMarkers"]["ExpiredObjectDeleteMarker"] is True
+
+
+def test_function_errors_alarm_to_the_error_topic(templates):
+    alarms = templates["compute"].find_resources("AWS::CloudWatch::Alarm")
+    assert len(alarms) == 5
+    for alarm in alarms.values():
+        properties = alarm["Properties"]
+        assert properties["MetricName"] == "Errors"
+        assert "ErrorAlerts" in str(properties["AlarmActions"])
+
+
+def test_alert_email_context_subscribes_both_topics():
+    app = cdk.App(context={"alert_email": "alerts@example.com"})
+    template = Template.from_stack(ObservabilityStack(app, "Observability"))
+    template.resource_count_is("AWS::SNS::Subscription", 2)
+    template.all_resources_properties(
+        "AWS::SNS::Subscription", {"Protocol": "email", "Endpoint": "alerts@example.com"}
+    )
+
+
+def test_no_subscription_without_alert_email(templates):
+    templates["observability"].resource_count_is("AWS::SNS::Subscription", 0)

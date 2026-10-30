@@ -7,6 +7,12 @@ from aws_cdk import (
     Stack,
 )
 from aws_cdk import (
+    aws_cloudwatch as cloudwatch,
+)
+from aws_cdk import (
+    aws_cloudwatch_actions as cloudwatch_actions,
+)
+from aws_cdk import (
     aws_iam as iam,
 )
 from aws_cdk import (
@@ -131,6 +137,29 @@ class ComputeStack(Stack):
         )
 
         self._grant_least_privilege(storage, observability)
+        self._alarm_on_errors(observability)
+
+    def _alarm_on_errors(self, observability: ObservabilityStack) -> None:
+        """Alert the error topic when a function fails, including a crash before its own alert."""
+        alarm_action = cloudwatch_actions.SnsAction(observability.error_topic)
+        functions = {
+            "Scanner": self.scanner_fn,
+            "Executor": self.executor_fn,
+            "Monitor": self.monitor_fn,
+            "Closer": self.closer_fn,
+            "Reconciler": self.reconciler_fn,
+        }
+        for name, fn in functions.items():
+            alarm = cloudwatch.Alarm(
+                self,
+                f"{name}Errors",
+                metric=fn.metric_errors(period=Duration.minutes(5), statistic="Sum"),
+                threshold=1,
+                evaluation_periods=1,
+                comparison_operator=cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+                treat_missing_data=cloudwatch.TreatMissingData.NOT_BREACHING,
+            )
+            alarm.add_alarm_action(alarm_action)
 
     def _grant_least_privilege(
         self, storage: StorageStack, observability: ObservabilityStack

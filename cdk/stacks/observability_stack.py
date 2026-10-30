@@ -10,6 +10,9 @@ from aws_cdk import (
 from aws_cdk import (
     aws_sns as sns,
 )
+from aws_cdk import (
+    aws_sns_subscriptions as subscriptions,
+)
 from constructs import Construct
 
 
@@ -31,6 +34,12 @@ class ObservabilityStack(Stack):
             topic_name="premium-error-alerts",
             display_name="Premium Error Alerts",
         )
+
+        # Optional e-mail delivery: cdk deploy --context alert_email=<address>
+        alert_email = self.node.try_get_context("alert_email")
+        if alert_email:
+            for topic in (self.trade_topic, self.error_topic):
+                topic.add_subscription(subscriptions.EmailSubscription(alert_email))
 
         # CloudWatch Dashboard
         self.dashboard = cloudwatch.Dashboard(
