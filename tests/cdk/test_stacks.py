@@ -77,6 +77,12 @@ def _function_ids(template: Template) -> dict[str, str]:
     return {props["Properties"]["FunctionName"]: logical for logical, props in functions.items()}
 
 
+def _image_command(template: Template, function_name: str) -> list[str]:
+    logical = _function_ids(template)[function_name]
+    resource = template.find_resources("AWS::Lambda::Function")[logical]
+    return resource["Properties"]["ImageConfig"]["Command"]
+
+
 def _granted(template: Template, function_name: str) -> set[tuple[str, str]]:
     """(action, resource kind) pairs in the policies attached to the function's role."""
     function = template.find_resources("AWS::Lambda::Function")[
@@ -98,6 +104,43 @@ def _granted(template: Template, function_name: str) -> set[tuple[str, str]]:
                 matched = ["BrokerSecret"]
             grants |= {(action, kind) for action in actions for kind in matched}
     return grants
+
+
+@pytest.mark.parametrize(
+    "function_name, command",
+    [
+        ("premium-scanner", "scanner.handler.handler"),
+        ("premium-executor", "executor.handler.handler"),
+        ("premium-monitor", "monitor.handler.handler"),
+        ("premium-closer", "closer.handler.handler"),
+        ("premium-reconciler", "reconciler.handler.handler"),
+    ],
+)
+def test_each_function_runs_its_own_handler(templates, function_name, command):
+    assert _image_command(templates["compute"], function_name) == [command]
+
+
+def test_schedule_times(templates):
+    schedules = templates["orchestration"].find_resources("AWS::Scheduler::Schedule")
+    expressions = {
+        props["Properties"]["Name"]: props["Properties"]["ScheduleExpression"]
+        for props in schedules.values()
+    }
+    assert expressions == {
+        "premium-entry-run": "cron(0 10 ? * MON-FRI *)",
+        "premium-monitor-run": "rate(5 minutes)",
+        "premium-closer-run": "cron(45 15 ? * MON-FRI *)",
+        "premium-reconciler-run": "cron(15 16 ? * MON-FRI *)",
+    }
+
+
+def test_executors_receive_their_own_scan_result(templates):
+    machines = templates["orchestration"].find_resources("AWS::StepFunctions::StateMachine")
+    definitions = [str(m["Properties"]["DefinitionString"]) for m in machines.values()]
+    entry = next(d for d in definitions if "ScanIC" in d)
+    assert '"Payload.$":"$.scanIC.Payload"' in entry
+    assert '"Payload.$":"$.scanCS.Payload"' in entry
+    assert '"Variable":"$.scanIC.Payload.should_trade"' in entry
 
 
 def test_secret_grant_matches_the_strategy_configuration():
