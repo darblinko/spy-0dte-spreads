@@ -26,6 +26,7 @@ from common.config import (
     get_sns_error_topic,
 )
 from common.dynamo_io import get_positions, put_market_state
+from common.models import ACTIVE_STATUSES
 from common.notifications import publish_error_alert
 from common.option_symbols import build_option_symbol
 from market.expected_move import compute_expected_move
@@ -53,6 +54,7 @@ def handler(event: dict, context) -> dict:
         - spy_price: float
         - vix_level: float
         - strategy: str
+        - scan_id: str (only when should_trade is true)
         - reason: str (why we're trading or not)
     """
     strategy_name = event.get("strategy", "IC_SPY")
@@ -82,7 +84,7 @@ def _scan(config, strategy_name: str) -> dict:
     # Gate: check max positions
     positions_table = get_positions_table()
     open_positions = get_positions(positions_table, strategy_name)
-    open_count = sum(1 for p in open_positions.values() if p.status == "open")
+    open_count = sum(1 for p in open_positions.values() if p.status in ACTIVE_STATUSES)
     if open_count >= config.max_positions:
         return _no_trade(strategy_name, f"max_positions_reached ({open_count})")
 
@@ -148,6 +150,9 @@ def _scan(config, strategy_name: str) -> dict:
     return {
         "should_trade": True,
         "strategy": strategy_name,
+        # The executor derives its idempotency key from this, so a retried
+        # delivery of the same scan cannot place a second order.
+        "scan_id": now_et.strftime("%Y%m%dT%H%M%S"),
         "regime": regime_result.regime.value,
         "confidence": round(regime_result.confidence, 4),
         "expected_move": round(expected_move, 4),

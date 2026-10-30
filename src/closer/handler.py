@@ -1,29 +1,31 @@
 """Closer Lambda: force close all open positions at 3:45 PM ET.
 
-Runs once near end of day. Closes every remaining open position
-with reason "eod" regardless of P&L. This ensures no 0DTE positions
-are held through expiration.
+Runs once near end of day as a backstop for the monitor, which already closes
+open positions once the session's close deadline has passed (earlier on an
+early close day). Positions whose close is not confirmed by a fill stay active
+and are reported over the error topic.
 """
 
 import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from common.config import get_config, get_positions_table, get_sns_error_topic
-from common.dynamo_io import get_all_open_positions
+from common.config import get_sns_error_topic
 from common.notifications import publish_error_alert
-from monitor.handler import _close_position, _update_position_prices
+from monitor.handler import process_active_positions
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 ET = ZoneInfo("US/Eastern")
+SETTLED_OUTCOMES = {"closed", "entry_failed"}
 
 
 def handler(event: dict, context) -> dict:
     """Lambda entry point.
 
-    Closes all open positions with reason "eod".
+    Closes all open positions with reason "eod". Failures raise, so the
+    asynchronous invocation is retried.
 
     Returns:
         Dict with count of positions closed.
@@ -33,38 +35,30 @@ def handler(event: dict, context) -> dict:
     except Exception as e:
         logger.exception("Closer failed")
         _try_error_alert("closer", str(e))
-        return {"error": str(e), "positions_closed": 0}
+        raise
 
 
 def _close_all() -> dict:
-    """Close every open position."""
-    positions_table = get_positions_table()
-    open_positions = get_all_open_positions(positions_table)
-
-    if not open_positions:
-        logger.info("No open positions to close at EOD")
-        return {"positions_closed": 0}
-
-    closed_count = 0
-
-    for position in open_positions:
-        config = get_config(position.strategy)
-
-        # Get final prices before closing
-        updated = _update_position_prices(config.secret_name, position)
-        target = updated if updated is not None else position
-
-        _close_position(target, "eod", config.secret_name)
-        closed_count += 1
-        logger.info(f"EOD close: {position.spread_id} pnl={target.unrealized_pnl:.2f}")
-
+    """Close every open position and report positions that remain active."""
+    result = process_active_positions(force_close=True)
     now_et = datetime.now(ET)
-    logger.info(
-        f"EOD closer finished at {now_et.strftime('%H:%M:%S ET')}: closed {closed_count} positions"
-    )
 
+    if result.get("skipped"):
+        message = f"market closed with {result['positions_active']} active position(s)"
+        logger.error(message)
+        _try_error_alert("closer", message)
+        return {"positions_closed": 0, "positions_active": result["positions_active"]}
+
+    checked = result.get("positions_checked", 0)
+    closed = result.get("closed", 0)
+    still_active = checked - sum(result.get(outcome, 0) for outcome in SETTLED_OUTCOMES)
+    if still_active > 0:
+        _try_error_alert("closer", f"{still_active} position(s) still active after the close")
+
+    logger.info(f"EOD closer finished at {now_et.strftime('%H:%M:%S ET')}: closed {closed}")
     return {
-        "positions_closed": closed_count,
+        "positions_closed": closed,
+        "positions_active": still_active,
         "close_time": now_et.isoformat(),
     }
 

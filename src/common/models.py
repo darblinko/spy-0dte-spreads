@@ -177,6 +177,9 @@ class TradeRecord:
     # Close reason
     close_reason: str = ""  # "profit", "stop", "eod", "roll", "manual"
 
+    # Client order ID of a close order, so partial closes of one spread are separate records
+    order_ref: str = ""
+
     def to_dynamo_item(self) -> dict:
         item = {}
         for f in fields(self):
@@ -190,6 +193,11 @@ class TradeRecord:
             else:
                 item[f.name] = str(val)
         return item
+
+
+def pnl_usd(net_credit: float, close_value: float, quantity: int) -> float:
+    """Dollar P&L, before fees, of quantity spreads sold at net_credit and valued at close_value."""
+    return round((net_credit - close_value) * quantity * CONTRACT_MULTIPLIER, 2)
 
 
 def generate_spread_id() -> str:

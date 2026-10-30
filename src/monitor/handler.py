@@ -1,144 +1,221 @@
-"""Monitor Lambda: poll open positions and check stop loss / take profit.
+"""Monitor Lambda: poll active positions, settle pending orders, check stop loss / take profit.
 
-Runs every 5 minutes via Step Functions and returns early outside 9:35 to 16:00 ET.
-Fetches current option prices, updates unrealized P&L, and triggers
-closes when thresholds are breached.
+Runs every 5 minutes via Step Functions. It returns without broker calls when no
+position is active, and without trading when the broker clock reports the
+market closed. Each run:
+1. settles entry and close orders that earlier runs left unconfirmed,
+2. prices open positions from fresh quotes for every leg of the stored contracts,
+3. starts a close on a threshold breach, or for every open position once the
+   session's close deadline (derived from the broker clock) has passed.
 """
 
 import logging
-from datetime import datetime
+from dataclasses import replace
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
+
+from alpaca.data.requests import OptionLatestQuoteRequest
 
 from common.alpaca_clients import create_options_data_client, create_trading_client
 from common.config import (
     get_config,
     get_positions_table,
     get_sns_error_topic,
-    get_sns_trade_topic,
     get_trades_table,
 )
-from common.dynamo_io import get_all_open_positions, put_position, record_trade
-from common.models import PositionStatus, SpreadPosition, TradeRecord
-from common.notifications import publish_error_alert, publish_trade_alert
+from common.dynamo_io import PositionConflictError, get_active_positions, save_position
+from common.lifecycle import resolve_close, resolve_entry, start_close
+from common.models import PositionStatus, SpreadLeg, SpreadPosition, pnl_usd
+from common.notifications import publish_error_alert
 from common.option_symbols import build_option_symbol
+from common.orders import find_order_by_client_id
+from common.session import close_deadline, session_now
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 ET = ZoneInfo("US/Eastern")
+CLOSE_FILL_WAIT_SECONDS = 10
+MAX_QUOTE_AGE = timedelta(minutes=2)
+# An executor invocation lasts at most 120 s; younger pending entries are still its own.
+PENDING_ENTRY_GRACE = timedelta(minutes=3)
+PENDING_CLOSE_GRACE = timedelta(minutes=1)
 
 
 def handler(event: dict, context) -> dict:
     """Lambda entry point.
 
     Args:
-        event: Optional dict, may contain {"strategy": "IC_SPY"} to filter.
+        event: Unused.
         context: Lambda context (unused).
 
     Returns:
-        Dict with monitor results: positions checked, closed, still open.
+        Dict with counts per outcome. Failures raise, so Step Functions retries.
     """
-    # Guard: only run during market hours (9:35 to 16:00 ET)
-    now_et = datetime.now(ET)
-    market_start = now_et.replace(hour=9, minute=35, second=0, microsecond=0)
-    market_end = now_et.replace(hour=16, minute=0, second=0, microsecond=0)
-    if not (market_start <= now_et <= market_end):
-        return {"skipped": True, "reason": "outside_market_hours"}
-
     try:
-        return _monitor(event)
+        return process_active_positions(force_close=False)
     except Exception as e:
         logger.exception("Monitor failed")
         _try_error_alert("monitor", str(e))
-        return {"error": str(e), "positions_checked": 0}
+        raise
 
 
-def _monitor(event: dict) -> dict:
-    """Core monitor logic."""
-    positions_table = get_positions_table()
-    open_positions = get_all_open_positions(positions_table)
+def process_active_positions(force_close: bool) -> dict:
+    """Process every active position. force_close closes open positions regardless of P&L."""
+    tables = {"positions": get_positions_table(), "trades": get_trades_table()}
+    positions = get_active_positions(tables["positions"])
+    if not positions:
+        return {"positions_checked": 0}
 
-    if not open_positions:
-        return {
-            "positions_checked": 0,
-            "positions_closed": 0,
-            "positions_open": 0,
-        }
+    clock = create_trading_client(get_config(positions[0].strategy).secret_name).get_clock()
+    if not clock.is_open:
+        return {"skipped": True, "reason": "market_closed", "positions_active": len(positions)}
 
-    closed_count = 0
-    checked_count = 0
-
-    for position in open_positions:
-        checked_count += 1
+    outcomes: dict[str, int] = {}
+    errors = []
+    for position in positions:
         config = get_config(position.strategy)
-
-        # Update current prices
-        updated_position = _update_position_prices(config.secret_name, position)
-        if updated_position is None:
-            logger.warning(f"Could not update prices for {position.spread_id}")
+        past_deadline = session_now(clock) >= close_deadline(clock, config.force_close_time)
+        try:
+            outcome = process_position(
+                config.secret_name,
+                tables,
+                position,
+                session_now(clock),
+                force_close or past_deadline,
+            )
+        except Exception as e:
+            logger.exception(f"Failed to process {position.spread_id}")
+            errors.append(f"{position.spread_id}: {e}")
             continue
+        outcomes[outcome] = outcomes.get(outcome, 0) + 1
 
-        # Check thresholds
-        close_reason = _check_thresholds(updated_position)
-
-        if close_reason is not None:
-            _close_position(updated_position, close_reason, config.secret_name)
-            closed_count += 1
-        else:
-            # Persist updated prices
-            put_position(positions_table, updated_position)
-
-    return {
-        "positions_checked": checked_count,
-        "positions_closed": closed_count,
-        "positions_open": checked_count - closed_count,
-    }
+    if errors:
+        raise RuntimeError(f"{len(errors)} position(s) failed: {'; '.join(errors)}")
+    return {"positions_checked": len(positions), **outcomes}
 
 
-def _update_position_prices(secret_name: str, position: SpreadPosition) -> SpreadPosition | None:
-    """Fetch current option prices and update position P&L.
+def process_position(
+    secret_name: str, tables: dict, position: SpreadPosition, now: datetime, force_close: bool
+) -> str:
+    """Advance one position and return its outcome, such as open, closed or unpriced."""
+    trading_client = create_trading_client(secret_name)
+    if position.status == PositionStatus.PENDING_OPEN.value:
+        if _age(position, now) < PENDING_ENTRY_GRACE:
+            return "pending_open"
+        order = find_order_by_client_id(trading_client, position.spread_id)
+        position = resolve_entry(trading_client, tables, position, order, cancel_if_working=True)
+    elif position.status == PositionStatus.CLOSING.value:
+        if _age(position, now) < PENDING_CLOSE_GRACE:
+            return "closing"
+        order = None
+        if position.close_client_order_id:
+            order = find_order_by_client_id(trading_client, position.close_client_order_id)
+        position = resolve_close(trading_client, tables, position, order, cancel_if_working=True)
 
-    Returns a new position with updated current_value and unrealized_pnl,
-    or None if price fetch fails.
+    if position.status != PositionStatus.OPEN.value:
+        return _outcome(position)
+    return _evaluate_open(trading_client, secret_name, tables, position, now, force_close)
+
+
+def _evaluate_open(
+    trading_client,
+    secret_name: str,
+    tables: dict,
+    position: SpreadPosition,
+    now: datetime,
+    force_close: bool,
+) -> str:
+    if date.fromisoformat(position.expiration_date) < now.date():
+        message = f"{position.spread_id} expired {position.expiration_date} while open"
+        logger.error(message)
+        _try_error_alert("monitor/expired", f"{message}; reconcile with the broker manually")
+        return "expired"
+
+    priced = price_position(create_options_data_client(secret_name), position, now)
+    if priced is None and not force_close:
+        return "unpriced"
+    if priced is None:
+        _try_error_alert(
+            "monitor/eod", f"{position.spread_id}: no valid quotes; closing at the last value"
+        )
+        priced = position
+
+    reason = "eod" if force_close else _check_thresholds(priced)
+    if reason is None:
+        try:
+            save_position(tables["positions"], priced)
+        except PositionConflictError:
+            return "conflict"
+        return "open"
+
+    result = start_close(
+        trading_client, tables, priced, reason, priced.current_value, CLOSE_FILL_WAIT_SECONDS
+    )
+    return "conflict" if result is None else _outcome(result)
+
+
+def _outcome(position: SpreadPosition) -> str:
+    return "closed" if position.status.startswith("closed") else position.status
+
+
+def _age(position: SpreadPosition, now: datetime) -> timedelta:
+    if not position.status_time:
+        return timedelta.max
+    return now - datetime.fromisoformat(position.status_time)
+
+
+def leg_symbol(position: SpreadPosition, leg: SpreadLeg) -> str:
+    """The leg's stored contract, or for older records one built from the stored expiration."""
+    if leg.contract_id:
+        return leg.contract_id
+    expiration = date.fromisoformat(position.expiration_date)
+    return build_option_symbol(position.underlying, expiration, leg.option_type, leg.strike)
+
+
+def price_position(
+    options_client, position: SpreadPosition, now: datetime
+) -> SpreadPosition | None:
+    """Return a copy of the position valued at the leg mids.
+
+    Returns None unless every leg has a quote no older than MAX_QUOTE_AGE with
+    a positive ask at or above the bid. A missing leg would otherwise drop out of
+    the sum and fake a profit or a loss.
     """
-    try:
-        options_client = create_options_data_client(secret_name)
-        legs = position.get_legs()
-        today = datetime.now(ET).date()
-        symbols = [
-            build_option_symbol(position.underlying, today, leg.option_type, leg.strike)
-            for leg in legs
-        ]
+    legs = position.get_legs()
+    symbols = [leg_symbol(position, leg) for leg in legs]
+    quotes = options_client.get_option_latest_quote(
+        OptionLatestQuoteRequest(symbol_or_symbols=symbols)
+    )
 
-        from alpaca.data.requests import OptionLatestQuoteRequest
+    priced_legs = []
+    current_value = 0.0
+    for leg, symbol in zip(legs, symbols, strict=True):
+        mid = _valid_mid(quotes.get(symbol), now)
+        if mid is None:
+            logger.warning(f"{position.spread_id}: no valid quote for {symbol}")
+            return None
+        priced_legs.append(replace(leg, current_price=mid))
+        # Sold legs are a liability to buy back; bought legs offset it.
+        current_value += mid if leg.side == "sell" else -mid
 
-        quote_request = OptionLatestQuoteRequest(symbol_or_symbols=symbols)
-        quotes = options_client.get_option_latest_quote(quote_request)
+    priced = replace(
+        position,
+        current_value=round(current_value, 4),
+        unrealized_pnl=pnl_usd(position.net_credit, current_value, position.quantity),
+    )
+    priced.set_legs(priced_legs)
+    return priced
 
-        current_value = 0.0
-        for i, leg in enumerate(legs):
-            symbol = symbols[i]
-            if symbol not in quotes:
-                continue
-            quote = quotes[symbol]
-            mid = (quote.bid_price + quote.ask_price) / 2
-            leg.current_price = mid
 
-            # Sell legs: we gain when price drops. Buy legs: we gain when price rises.
-            if leg.side == "sell":
-                current_value += mid
-            else:
-                current_value -= mid
-
-        position.set_legs(legs)
-        position.current_value = round(current_value, 4)
-        position.unrealized_pnl = round(position.net_credit - current_value, 4)
-
-        return position
-
-    except Exception:
-        logger.exception(f"Failed to update prices for {position.spread_id}")
+def _valid_mid(quote, now: datetime) -> float | None:
+    if quote is None or quote.bid_price is None or quote.ask_price is None:
         return None
+    if quote.ask_price <= 0 or quote.bid_price < 0 or quote.ask_price < quote.bid_price:
+        return None
+    if quote.timestamp is None or now - quote.timestamp > MAX_QUOTE_AGE:
+        return None
+    return (quote.bid_price + quote.ask_price) / 2
 
 
 def _check_thresholds(position: SpreadPosition) -> str | None:
@@ -157,115 +234,6 @@ def _check_thresholds(position: SpreadPosition) -> str | None:
         return "profit"
 
     return None
-
-
-def _close_position(position: SpreadPosition, reason: str, secret_name: str) -> None:
-    """Close a position: submit closing orders, update DB, notify."""
-    positions_table = get_positions_table()
-    trades_table = get_trades_table()
-
-    # Determine status
-    status_map = {
-        "stop": PositionStatus.CLOSED_STOP,
-        "profit": PositionStatus.CLOSED_PROFIT,
-        "eod": PositionStatus.CLOSED_EOD,
-    }
-    position.status = status_map.get(reason, PositionStatus.CLOSED_MANUAL).value
-
-    # Submit closing orders
-    _submit_close_orders(secret_name, position)
-
-    # Update position in DB
-    put_position(positions_table, position)
-
-    # Record close trade
-    today_str = datetime.now(ET).strftime("%Y-%m-%d")
-    trade = TradeRecord(
-        trade_date=today_str,
-        spread_id=position.spread_id,
-        strategy=position.strategy,
-        action="CLOSE",
-        spread_type=position.spread_type,
-        underlying=position.underlying,
-        net_credit=position.net_credit,
-        close_value=position.current_value,
-        realized_pnl=position.unrealized_pnl,
-        close_reason=reason,
-    )
-    record_trade(trades_table, trade)
-
-    # Notify
-    try:
-        topic = get_sns_trade_topic()
-        publish_trade_alert(
-            topic,
-            position.strategy,
-            f"CLOSE ({reason})",
-            position.spread_id,
-            position.spread_type,
-            position.unrealized_pnl,
-            position.underlying,
-        )
-    except Exception:  # noqa: BLE001 the close is recorded; the alert is best effort
-        logger.warning("Failed to send close notification")
-
-    logger.info(f"Closed {position.spread_id}: reason={reason} pnl={position.unrealized_pnl:.2f}")
-
-
-def _submit_close_orders(secret_name: str, position: SpreadPosition) -> bool:
-    """Submit a multi-leg closing order (reverse of opening).
-
-    Uses OrderClass.MLEG for atomic fill. limit_price is positive
-    (debit) since we're buying back the spread.
-    """
-    try:
-        from alpaca.trading.enums import OrderClass, PositionIntent
-        from alpaca.trading.requests import (
-            LimitOrderRequest,
-            OptionLegRequest,
-            TimeInForce,
-        )
-
-        trading_client = create_trading_client(secret_name)
-        legs = position.get_legs()
-        today = datetime.now(ET).date()
-
-        option_legs = []
-        for leg in legs:
-            symbol = build_option_symbol(position.underlying, today, leg.option_type, leg.strike)
-
-            # Reverse each leg: a sold leg is bought to close, a bought leg is sold to close
-            intent = (
-                PositionIntent.BUY_TO_CLOSE if leg.side == "sell" else PositionIntent.SELL_TO_CLOSE
-            )
-
-            option_legs.append(
-                OptionLegRequest(
-                    symbol=symbol,
-                    ratio_qty=leg.quantity,
-                    position_intent=intent,
-                )
-            )
-
-        # Positive limit_price = debit paid to close
-        order_request = LimitOrderRequest(
-            order_class=OrderClass.MLEG,
-            qty=1,
-            limit_price=position.current_value,
-            time_in_force=TimeInForce.DAY,
-            legs=option_legs,
-        )
-
-        order = trading_client.submit_order(order_request)
-        logger.info(
-            f"Submitted MLEG close: {position.spread_type} "
-            f"debit={position.current_value} order_id={order.id}"
-        )
-        return True
-
-    except Exception:
-        logger.exception("Failed to submit close orders")
-        return False
 
 
 def _try_error_alert(source: str, error: str) -> None:

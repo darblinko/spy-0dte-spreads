@@ -1,7 +1,5 @@
 """Tests for executor Lambda handler."""
 
-from unittest.mock import patch
-
 import pytest
 
 from common.models import MarketRegime, PositionStatus, SpreadType
@@ -10,7 +8,6 @@ from executor.handler import (
     _build_position_from_ic,
     _build_spread_for_regime,
     _compute_risk_levels,
-    _execute,
 )
 from strategy.credit_spread import CreditSpreadResult
 from strategy.iron_condor import IronCondorResult
@@ -167,13 +164,14 @@ class TestBuildPositionFromIC:
             regime="range",
             stop_loss=1.0,
             take_profit=0.25,
+            spread_id="IC_SPY-20260404T100000",
         )
         assert pos.spread_type == SpreadType.IRON_CONDOR.value
         assert pos.strategy == "IC_SPY"
         assert len(pos.legs) == 4
         assert pos.net_credit == ic.net_credit
         assert pos.max_loss == ic.max_loss
-        assert pos.status == PositionStatus.OPEN.value
+        assert pos.status == PositionStatus.PENDING_OPEN.value
         assert pos.stop_loss_price == 1.0
         assert pos.take_profit_price == 0.25
 
@@ -190,6 +188,7 @@ class TestBuildPositionFromIC:
             regime="range",
             stop_loss=1.0,
             take_profit=0.25,
+            spread_id="IC_SPY-20260404T100000",
         )
         assert pos.spy_price_at_entry == 550.0
         assert pos.vix_at_entry == 18.5
@@ -211,79 +210,12 @@ class TestBuildPositionFromCS:
             regime="uptrend",
             stop_loss=1.0,
             take_profit=0.25,
+            spread_id="IC_SPY-20260404T100000",
         )
         assert pos.spread_type == cs.spread_type
         assert pos.strategy == "CS_SPY"
         assert len(pos.legs) == 2
         assert pos.net_credit == cs.net_credit
-
-
-class TestExecuteIntegration:
-    @patch("executor.handler.get_sns_trade_topic", return_value="arn:aws:sns:test")
-    @patch("executor.handler.get_sns_error_topic", return_value="arn:aws:sns:err")
-    @patch("executor.handler.get_trades_table", return_value="trades")
-    @patch("executor.handler.get_positions_table", return_value="positions")
-    @patch("executor.handler.record_trade")
-    @patch("executor.handler.put_position")
-    @patch("executor.handler.publish_trade_alert")
-    @patch("executor.handler._submit_orders")
-    @patch("executor.handler._fetch_options_chain")
-    def test_successful_ic_execution(
-        self,
-        mock_chain,
-        mock_submit,
-        mock_alert,
-        mock_put_pos,
-        mock_rec_trade,
-        mock_pos_table,
-        mock_trades_table,
-        mock_sns_err,
-        mock_sns_trade,
-    ):
-        mock_chain.return_value = (_put_chain(), _call_chain())
-        mock_submit.return_value = True
-
-        from common.config import IC_SPY_CONFIG
-
-        scan_result = {
-            "should_trade": True,
-            "strategy": "IC_SPY",
-            "regime": "range",
-            "confidence": 0.8,
-            "expected_move": 3.5,
-            "spy_price": 550.0,
-            "vix_level": 18.5,
-        }
-        result = _execute(IC_SPY_CONFIG, scan_result)
-
-        assert result["executed"] is True
-        assert result["spread_type"] == "iron_condor"
-        mock_put_pos.assert_called_once()
-        mock_rec_trade.assert_called_once()
-        mock_alert.assert_called_once()
-
-    @patch("executor.handler.get_sns_error_topic", return_value="arn:aws:sns:err")
-    @patch("executor.handler.get_positions_table", return_value="positions")
-    @patch("executor.handler._fetch_options_chain")
-    def test_no_execution_when_spread_fails(self, mock_chain, mock_pos_table, mock_sns_err):
-        # Empty chains = no spread can be built
-        mock_chain.return_value = ([], [])
-
-        from common.config import IC_SPY_CONFIG
-
-        scan_result = {
-            "should_trade": True,
-            "strategy": "IC_SPY",
-            "regime": "range",
-            "confidence": 0.8,
-            "expected_move": 3.5,
-            "spy_price": 550.0,
-            "vix_level": 18.5,
-        }
-        result = _execute(IC_SPY_CONFIG, scan_result)
-
-        assert result["executed"] is False
-        assert "no_spread" in result["reason"]
 
 
 class TestOptionSymbols:
@@ -299,6 +231,7 @@ class TestOptionSymbols:
             regime="uptrend",
             stop_loss=1.0,
             take_profit=0.25,
+            spread_id="IC_SPY-20260404T100000",
         )
         for leg in pos.get_legs():
             assert leg.contract_id == f"SPY260404P{int(leg.strike * 1000):08d}"

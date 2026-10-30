@@ -126,16 +126,6 @@ def get_active_positions(table_name: str, strategies: tuple[str, ...] = STRATEGI
     return positions
 
 
-def put_position(table_name: str, position: SpreadPosition) -> None:
-    """Upsert a spread position."""
-    table = _get_table(table_name)
-    item = position.to_dynamo_item()
-    item["strategy"] = position.strategy
-    item["updated_at"] = datetime.now(UTC).isoformat()
-    table.put_item(Item=_sanitize_item(item))
-    logger.info(f"Saved position: {position.strategy}/{position.spread_id}")
-
-
 def delete_position(table_name: str, strategy: str, spread_id: str) -> None:
     """Delete a closed position."""
     table = _get_table(table_name)
@@ -159,6 +149,8 @@ def record_trade(table_name: str, trade: TradeRecord) -> None:
     """Record a trade entry or exit."""
     table = _get_table(table_name)
     trade_id = f"{trade.trade_date}#{trade.spread_id}#{trade.action}"
+    if trade.order_ref:
+        trade_id = f"{trade_id}#{trade.order_ref}"
     item = trade.to_dynamo_item()
     item["strategy"] = trade.strategy
     item["trade_id"] = trade_id
