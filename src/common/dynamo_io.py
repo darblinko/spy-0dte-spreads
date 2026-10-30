@@ -34,15 +34,27 @@ def _sanitize_item(item: dict) -> dict:
     return sanitized
 
 
+def _query_all(table, **query_kwargs) -> list[dict]:
+    """Run a query and follow LastEvaluatedKey until every page is read."""
+    items = []
+    while True:
+        response = table.query(**query_kwargs)
+        items.extend(response.get("Items", []))
+        last_key = response.get("LastEvaluatedKey")
+        if last_key is None:
+            return items
+        query_kwargs = {**query_kwargs, "ExclusiveStartKey": last_key}
+
+
 # --- Positions ---
 
 
 def get_positions(table_name: str, strategy: str) -> dict[str, SpreadPosition]:
-    """Get all open positions for a strategy. Returns dict keyed by spread_id."""
+    """Get every stored position for a strategy, in any status. Returns dict keyed by spread_id."""
     table = _get_table(table_name)
-    response = table.query(KeyConditionExpression=Key("strategy").eq(strategy))
+    items = _query_all(table, KeyConditionExpression=Key("strategy").eq(strategy))
     positions = {}
-    for item in response.get("Items", []):
+    for item in items:
         pos = SpreadPosition.from_dynamo_item(item)
         positions[pos.spread_id] = pos
     return positions
@@ -91,13 +103,14 @@ def record_trade(table_name: str, trade: TradeRecord) -> None:
 def get_trades_for_date(table_name: str, strategy: str, trade_date: str) -> list[dict]:
     """Get all trades for a strategy on a given date."""
     table = _get_table(table_name)
-    response = table.query(
+    items = _query_all(
+        table,
         KeyConditionExpression=(
             Key("strategy").eq(strategy) & Key("trade_id").begins_with(trade_date)
         ),
     )
     trades = []
-    for item in response.get("Items", []):
+    for item in items:
         trade = {k: float(v) if isinstance(v, Decimal) else v for k, v in item.items()}
         trades.append(trade)
     return trades
