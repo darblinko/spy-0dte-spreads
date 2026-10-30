@@ -102,13 +102,20 @@ uv run --group cdk --group dev python -m pytest tests/cdk        # 5 CDK synthes
 uvx ruff check . && uvx ruff format --check .
 ```
 
-Deploying needs an AWS account, Docker and the CDK CLI (`npm install -g aws-cdk`). The broker keys are read from the environment; the variable names are in `.env.example`.
+Deploying needs an AWS account, Docker and the CDK CLI (`npm install -g aws-cdk`). AWS credentials come from the usual sources, for example `AWS_PROFILE` or `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`. The broker keys and the region are read from the environment; the variable names are in `.env.example`.
 
 ```bash
+export AWS_PROFILE=<profile>                 # or AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY
+export AWS_DEFAULT_REGION=us-east-1          # the seed script exits if no region is set
+export ALPACA_API_KEY=<key> ALPACA_API_SECRET=<secret>
 uv sync --group cdk && source .venv/bin/activate
-python scripts/seed_secrets.py             # writes ALPACA_API_KEY and ALPACA_API_SECRET to premium/spy-api
-cd cdk && cdk deploy --all
+python scripts/seed_secrets.py               # writes the broker keys to premium/spy-api
+cd cdk
+cdk bootstrap aws://<account id>/us-east-1   # once per account and region
+cdk deploy --all --context account=<account id> --context region=us-east-1
 ```
+
+`--context alert_email=<address>` subscribes an address to the trade and error topics. The image installs `src/requirements.txt`, which is exported from `uv.lock` with hashes (`uv export --frozen --no-default-groups --no-emit-project --format requirements-txt -o src/requirements.txt`); CI checks that it matches the lock.
 
 The trading client is created with `paper=True` (`src/common/alpaca_clients.py`). The schedules are enabled on deploy.
 

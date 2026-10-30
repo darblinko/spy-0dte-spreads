@@ -2,9 +2,12 @@
 """Seed Alpaca API credentials into AWS Secrets Manager.
 
 Usage:
+    export AWS_DEFAULT_REGION=us-east-1      # or AWS_REGION
     export ALPACA_API_KEY=your-key
     export ALPACA_API_SECRET=your-secret
     python scripts/seed_secrets.py
+
+AWS credentials come from the usual boto3 sources, for example AWS_PROFILE.
 """
 
 import json
@@ -31,7 +34,12 @@ def main():
         }
     )
 
-    client = boto3.client("secretsmanager")
+    region = os.environ.get("AWS_DEFAULT_REGION") or os.environ.get("AWS_REGION")
+    if not region:
+        print("Error: Set AWS_DEFAULT_REGION (or AWS_REGION) to the region you deploy to")
+        sys.exit(1)
+
+    client = boto3.client("secretsmanager", region_name=region)
 
     try:
         client.create_secret(
