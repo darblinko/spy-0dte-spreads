@@ -23,8 +23,14 @@ from common.config import (
     get_sns_error_topic,
     get_trades_table,
 )
-from common.dynamo_io import PositionConflictError, get_active_positions, save_position
+from common.dynamo_io import (
+    STRATEGIES,
+    PositionConflictError,
+    get_active_positions,
+    save_position,
+)
 from common.lifecycle import resolve_close, resolve_entry, start_close
+from common.metrics import try_publish_metric
 from common.models import PositionStatus, SpreadLeg, SpreadPosition, pnl_usd
 from common.notifications import publish_error_alert
 from common.option_symbols import build_option_symbol
@@ -64,6 +70,7 @@ def process_active_positions(force_close: bool) -> dict:
     """Process every active position. force_close closes open positions regardless of P&L."""
     tables = {"positions": get_positions_table(), "trades": get_trades_table()}
     positions = get_active_positions(tables["positions"])
+    _publish_active_positions(positions)
     if not positions:
         return {"positions_checked": 0}
 
@@ -93,6 +100,12 @@ def process_active_positions(force_close: bool) -> dict:
     if errors:
         raise RuntimeError(f"{len(errors)} position(s) failed: {'; '.join(errors)}")
     return {"positions_checked": len(positions), **outcomes}
+
+
+def _publish_active_positions(positions: list[SpreadPosition]) -> None:
+    for strategy in STRATEGIES:
+        count = sum(1 for p in positions if p.strategy == strategy)
+        try_publish_metric("ActivePositions", count, dimensions={"Strategy": strategy})
 
 
 def process_position(

@@ -4,7 +4,7 @@ import boto3
 import pytest
 from moto import mock_aws
 
-from common import dynamo_io
+from common import dynamo_io, metrics
 
 POSITIONS_TABLE = "premium-positions"
 TRADES_TABLE = "premium-trades"
@@ -23,6 +23,17 @@ def _create_table(client, name: str, partition_key: str, sort_key: str) -> None:
         ],
         BillingMode="PAY_PER_REQUEST",
     )
+
+
+class _DiscardingCloudWatch:
+    def put_metric_data(self, **kwargs) -> None:
+        pass
+
+
+@pytest.fixture(autouse=True)
+def no_cloudwatch(monkeypatch):
+    """Handlers publish dashboard metrics; unit tests never reach CloudWatch."""
+    monkeypatch.setattr(metrics, "_cw_client", _DiscardingCloudWatch())
 
 
 @pytest.fixture

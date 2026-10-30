@@ -33,3 +33,13 @@ def publish_metric(
         Namespace=NAMESPACE,
         MetricData=[metric_data],
     )
+
+
+def try_publish_metric(
+    metric_name: str, value: float, unit: str = "Count", dimensions: dict | None = None
+) -> None:
+    """Publish a dashboard metric, logging instead of raising: metrics never stop a run."""
+    try:
+        publish_metric(metric_name, value, unit, dimensions)
+    except Exception:
+        logger.warning(f"Failed to publish metric {metric_name}", exc_info=True)

@@ -26,6 +26,7 @@ from common.config import (
     get_sns_error_topic,
 )
 from common.dynamo_io import get_positions, put_market_state
+from common.metrics import try_publish_metric
 from common.models import ACTIVE_STATUSES
 from common.notifications import publish_error_alert
 from common.option_symbols import build_option_symbol
@@ -121,6 +122,7 @@ def _scan(config, strategy_name: str) -> dict:
 
     # Persist market state
     _save_market_state(now_et, regime_result, spy_price, vix_level, expected_move)
+    try_publish_metric("RegimeConfidence", regime_result.confidence, unit="None")
 
     # Gate: confidence threshold
     if regime_result.confidence < config.regime_confidence_min:

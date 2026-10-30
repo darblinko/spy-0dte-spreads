@@ -27,6 +27,7 @@ from common.dynamo_io import (
     get_latest_market_state,
     get_trades_for_date,
 )
+from common.metrics import try_publish_metric
 from common.models import CONTRACT_MULTIPLIER, PositionStatus, SpreadPosition
 from common.notifications import publish_error_alert
 from common.s3_io import write_json_to_s3
@@ -88,6 +89,7 @@ def _reconcile() -> dict:
     s3_key = f"daily-summaries/{date_str}.json"
     write_json_to_s3(bucket, s3_key, summary)
 
+    _publish_daily_metrics(summary)
     # Send daily report
     _send_daily_report(summary)
 
@@ -125,6 +127,12 @@ def _compute_daily_summary(date_str: str, trades: list[dict], orphaned_count: in
         "close_reasons": close_reasons,
         "orphaned_positions": orphaned_count,
     }
+
+
+def _publish_daily_metrics(summary: dict) -> None:
+    try_publish_metric("DailyPnL", summary["total_realized_pnl_usd"], unit="None")
+    if summary["trades_closed"]:
+        try_publish_metric("WinRate", summary["win_rate"], unit="None")
 
 
 def _expected_holdings(positions: list[SpreadPosition]) -> dict[str, int]:
