@@ -19,6 +19,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Lock and image requirements are current
+        run: |
+          uv lock --check
+          uv export --frozen --no-default-groups --no-emit-project --format requirements-txt -o "$RUNNER_TEMP/requirements.txt"
+          diff <(tail -n +3 "$RUNNER_TEMP/requirements.txt") <(tail -n +3 src/requirements.txt)
       - name: Lint
         run: |
           uvx ruff check .
