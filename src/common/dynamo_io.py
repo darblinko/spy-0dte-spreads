@@ -133,15 +133,6 @@ def delete_position(table_name: str, strategy: str, spread_id: str) -> None:
     logger.info(f"Deleted position: {strategy}/{spread_id}")
 
 
-def get_all_open_positions(table_name: str) -> list[SpreadPosition]:
-    """Get all open positions across all strategies."""
-    positions = []
-    for strategy in STRATEGIES:
-        strategy_positions = get_positions(table_name, strategy)
-        positions.extend(p for p in strategy_positions.values() if p.status == "open")
-    return positions
-
-
 # --- Trades ---
 
 
