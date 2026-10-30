@@ -2,9 +2,11 @@
 
 Same-day (0DTE) SPY option spread system on AWS: five Lambda functions on one container image, run by Step Functions and EventBridge Scheduler, with positions and trades in DynamoDB, deployed as four CDK stacks.
 
+Status: incomplete prototype for a paper trading account (`paper=True` in `src/common/alpaca_clients.py`). The order lifecycle is tested offline, against broker fakes built from alpaca-py response models and an in-memory DynamoDB (moto). The repository records no run against the broker or a deployed stack.
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/figures/system-at-a-glance-dark.svg">
-  <img alt="4 CDK stacks, 5 Lambda functions, 4 schedules, 162 offline tests passing." src="docs/figures/system-at-a-glance-light.svg" width="760">
+  <img alt="4 CDK stacks, 5 Lambda functions, 4 schedules, 244 offline tests passing." src="docs/figures/system-at-a-glance-light.svg" width="760">
 </picture>
 
 <details><summary>Data table</summary>
@@ -14,20 +16,20 @@ Same-day (0DTE) SPY option spread system on AWS: five Lambda functions on one co
 | CDK stacks | 4 |
 | Lambda functions | 5 |
 | Schedules | 4 |
-| Offline tests passing | 162 |
+| Offline tests passing | 244 |
 
-Source: `cdk/app.py`, `cdk/stacks/compute_stack.py`, `cdk/stacks/orchestration_stack.py`, and `pytest tests/unit tests/cdk` at revision `4b1dc2f`. Chart data: `docs/data.json`.
+Source: `cdk/app.py`, `cdk/stacks/compute_stack.py`, `cdk/stacks/orchestration_stack.py`, and `pytest tests/unit tests/cdk` at revision `c2b4942`. Chart data: `docs/data.json`.
 
 </details>
 
 ## What it does
 
-- Classifies each trading day at 10:00 Eastern as range, uptrend, downtrend or uncertain from one-minute SPY bars since the open: VWAP crosses, position against VWAP, opening range breakout and candle body ratio (`src/market/regime.py`).
+- Classifies each trading day at 10:00 Eastern as range, uptrend, downtrend or uncertain from one-minute SPY bars since the open: VWAP crosses, position against VWAP, opening range breakout and candle body ratio (`src/market/regime.py`). The bar handling is tested with the alpaca-py `BarSet` model (`tests/unit/test_scanner_bars.py`).
 - Defines two strategies on one paper trading account (`src/common/config.py`). `IC_SPY` sells an iron condor on range days. `CS_SPY` sells a credit spread in the direction of the trend on trend days.
-- Picks the short strike by delta and the long strike a fixed width away, and submits the spread as one multi-leg limit order for the net credit (`src/strategy/`, `src/executor/handler.py`).
-- Checks open positions every 5 minutes and closes a spread when its value reaches 2 times the credit received or falls to half of it (`src/monitor/handler.py`).
-- Closes every open position at 15:45 Eastern (`src/closer/handler.py`).
-- Writes a daily summary to S3 at 16:15 Eastern and sends it over SNS, with a count of positions still open (`src/reconciler/handler.py`).
+- Picks the short strike by delta and the long strike a fixed width away, sizes the order from the account equity and the remaining daily loss budget, and submits the spread as one multi-leg limit order whose client order ID is derived from the scan. A position is recorded as open only after the broker reports a fill (`src/strategy/`, `src/executor/handler.py`, `src/common/lifecycle.py`).
+- Checks active positions every 5 minutes and starts a close when the spread value reaches 2 times the credit received or falls to half of it. Every leg must have a quote no older than 2 minutes; otherwise the position is not evaluated (`src/monitor/handler.py`).
+- Starts a close for every open position once the session close deadline passes: 15 minutes before the next close reported by the broker clock, 15:45 Eastern on a regular day (`src/common/session.py`). The closer at 15:45 is a backstop (`src/closer/handler.py`). A position counts as closed only after its close order fills. The closer reports positions that are still active on the error topic.
+- Writes a daily summary to S3 at 16:15 Eastern and sends it over SNS. The summary compares the broker's option positions and working orders with the stored positions and lists every discrepancy (`src/reconciler/handler.py`).
 
 ## How it works
 
@@ -62,22 +64,23 @@ flowchart TB
   manage --> alpaca
   entry --> ddb
   manage --> ddb
+  recon --> alpaca
   recon --> ddb
   recon --> s3
   entry & manage & recon -.-> sns
 ```
 
-Every function except the Reconciler reads the broker keys from the Secrets Manager secret `premium/spy-api` (`src/common/alpaca_clients.py`, `src/common/config.py`).
+Every function reads the broker keys from the Secrets Manager secret `premium/spy-api` (`src/common/alpaca_clients.py`, `src/common/config.py`). Each function's role can read only that secret and the tables, topics and bucket actions its handler uses (`cdk/stacks/compute_stack.py`).
 
 The five functions share the image built from `src/Dockerfile`; each overrides the command (`cdk/stacks/compute_stack.py`).
 
 | Function | Trigger | Memory, timeout | Work |
 |---|---|---|---|
-| Scanner | Entry state machine, once per strategy | 1,024 MB, 120 s | Stops if the market is closed, the strategy has 3 open positions or there are fewer than 5 bars. Otherwise classifies the regime and returns `should_trade` when the regime matches the strategy with confidence of at least 0.6 (`src/scanner/handler.py`). |
-| Executor | Entry state machine, when `should_trade` is true | 512 MB, 120 s | Requests quotes for 15 strikes on each side of the money, builds the spread, submits the order and records the position and an open trade (`src/executor/handler.py`). |
-| Monitor | Monitor state machine | 512 MB, 60 s | Returns early outside 9:35 to 16:00 Eastern and when nothing is open. Otherwise reprices each leg at the mid and closes on the stop or take profit threshold (`src/monitor/handler.py`). |
-| Closer | Scheduler, 15:45 | 512 MB, 120 s | Reprices and closes every open position (`src/closer/handler.py`). |
-| Reconciler | Scheduler, 16:15 | 512 MB, 120 s | Builds the daily summary from the trades table and writes it to S3 (`src/reconciler/handler.py`). |
+| Scanner | Entry state machine, once per strategy | 1,024 MB, 120 s | Stops if the market is closed, the strategy has 3 active positions (pending, open or closing) or there are fewer than 5 bars. Otherwise classifies the regime and returns `should_trade` and a `scan_id` when the regime matches the strategy with confidence of at least 0.6 (`src/scanner/handler.py`). |
+| Executor | Entry state machine, when `should_trade` is true | 512 MB, 120 s | Stops outside the 10:00 to 14:30 entry window, after the close deadline or at the daily loss limit. Otherwise requests quotes for 15 strikes on each side of the money, builds and sizes the spread, stores it as pending under its client order ID, submits the order and records the position and an open trade from the fill (`src/executor/handler.py`). |
+| Monitor | Monitor state machine | 512 MB, 60 s | Returns when nothing is active, and without trading when the broker clock reports the market closed. Otherwise settles pending entries and closes, prices each leg at the mid and starts a close on the stop or take profit threshold or after the close deadline (`src/monitor/handler.py`). |
+| Closer | Scheduler, 15:45 | 512 MB, 120 s | Runs the monitor pass with a close for every open position and alerts on positions still active (`src/closer/handler.py`). |
+| Reconciler | Scheduler, 16:15 | 512 MB, 120 s | Builds the daily summary in dollars from the trades table, compares broker holdings and working orders with the stored positions and writes the summary to S3 (`src/reconciler/handler.py`). |
 
 The three cron schedules carry the time zone `America/New_York`, so they follow daylight saving time. The monitor schedule is `rate(5 minutes)` (`cdk/stacks/orchestration_stack.py`).
 
@@ -97,8 +100,8 @@ Requires Python 3.12 and [uv](https://docs.astral.sh/uv/). The CDK tests also ne
 ```bash
 git clone https://github.com/darblinko/spy-0dte-spreads
 cd spy-0dte-spreads
-uv run --group dev python -m pytest                              # 157 unit tests, no AWS access
-uv run --group cdk --group dev python -m pytest tests/cdk        # 5 CDK synthesis tests
+uv run --group dev python -m pytest                              # 222 unit tests, no AWS access
+uv run --group cdk --group dev python -m pytest tests/cdk        # 22 CDK synthesis tests
 uvx ruff check . && uvx ruff format --check .
 ```
 
@@ -136,19 +139,20 @@ src/
 scripts/
   seed_secrets.py         environment to Secrets Manager
 tests/
-  unit/                   157 tests with mocks, no AWS access
-  cdk/                    5 synthesis tests
+  unit/                   222 tests: moto for AWS, broker fakes from alpaca-py models
+  cdk/                    22 synthesis tests
 docs/                     chart data, README figures, landing page
 ```
 
 ## Design decisions and limitations
 
-- Option symbols are built with the strike as a plain integer: `f"{int(leg.strike):08d}"` in `src/executor/handler.py` and `src/monitor/handler.py`, and `:08.0f` in `src/scanner/handler.py`. The OCC symbol format encodes the strike multiplied by 1,000, as in the fixture `SPY260404P00520000` for a 520 strike (`tests/unit/test_models.py`). The generated symbols therefore name strikes 1,000 times too small. Inference, not verified against the broker: chain requests return no quotes, the executor builds no spread, and the expected move always takes the fallback of 1% of the SPY price.
-- Six configuration fields are not read by any code: `earliest_entry`, `latest_entry`, `force_close_time`, `regime_detection_time`, `max_daily_loss` and `position_size_pct` (`src/common/config.py`). There is no daily loss limit, every order is for 1 spread, and the entry and close times are set only by the schedules.
-- No code checks order fills. The executor records a position once the order is submitted. `_close_position` in `src/monitor/handler.py` marks a position closed and records the close trade whether or not the close order was submitted.
+- `regime_detection_time` in `src/common/config.py` is not read by any code. The scan time is set by the entry schedule.
+- Entries and closes are confirmed from broker order states and fills. That handling is tested against offline fakes only (`tests/unit/test_entry_lifecycle.py`, `tests/unit/test_monitor_lifecycle.py`), not against the broker. A close order that does not fill returns the position to open, and the monitor tries again on its next run. A position still active after the closer is reported on the error topic; one still open after its expiration date is reported again by each monitor run and has to be resolved by hand.
+- Credits and P&L in trades and reports are dollars before fees: quote points times quantity times the contract multiplier of 100 (`src/common/models.py`).
+- Active positions are found by reading every position of each strategy partition, page by page. Closed positions stay in the table, so this read grows with the history (`src/common/dynamo_io.py`).
 - VIX is fetched from yfinance and stored with the regime signals, but it does not enter the regime score (`src/market/regime.py`). A failed fetch uses 20.0 (`src/scanner/handler.py`).
-- The CloudWatch dashboard plots four custom metrics in the `Premium/Trading` namespace (`cdk/stacks/observability_stack.py`). `publish_metric` in `src/common/metrics.py` has no callers, so the dashboard has no data. There are no CloudWatch alarms; errors are reported by the handlers to the SNS error topic, and the topics have no subscriptions.
-- The monitor schedule fires 288 times a day on every day of the week. The handler checks the clock time but not the weekday or market holidays; a run with no open positions makes no broker calls.
+- The CloudWatch dashboard plots four custom metrics in the `Premium/Trading` namespace (`cdk/stacks/observability_stack.py`). The scanner, monitor and reconciler publish them; a failed publish is logged and does not stop the run (`src/common/metrics.py`). Each function has an alarm on Lambda errors that notifies the error topic. The topics have a subscriber only when deployed with `--context alert_email=<address>`.
+- The monitor schedule fires 288 times a day on every day of the week. A run with no active positions makes no broker calls; otherwise the broker clock decides whether the market is open, which covers weekends, holidays and early closes.
 - Both strategies use the same secret and therefore the same broker account (`src/common/config.py`).
 - The repository contains no backtest, no simulation and no trading record. Nothing in it shows that the strategies have an edge.
 - CI runs only offline tests. There are no integration tests against a deployed stack.

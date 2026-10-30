@@ -1,17 +1,17 @@
 {
   "meta": {
     "repo": "premium-selling",
-    "revision": "4b1dc2f",
-    "measured": "2026-10-28"
+    "revision": "c2b4942",
+    "measured": "2026-10-30"
   },
   "charts": [
     {
       "name": "system-at-a-glance",
       "type": "stats",
       "title": "System at a glance",
-      "subtitle": "Counts read from the repository at revision 4b1dc2f",
+      "subtitle": "Counts read from the repository at revision c2b4942",
       "source": "cdk/app.py, cdk/stacks/compute_stack.py, cdk/stacks/orchestration_stack.py, pytest tests/unit tests/cdk",
-      "alt": "4 CDK stacks, 5 Lambda functions, 4 schedules, 162 offline tests passing.",
+      "alt": "4 CDK stacks, 5 Lambda functions, 4 schedules, 244 offline tests passing.",
       "tiles": [
         {
           "label": "CDK stacks",
@@ -30,8 +30,8 @@
         },
         {
           "label": "Offline tests passing",
-          "value": "162",
-          "note": "157 unit, 5 CDK synthesis"
+          "value": "244",
+          "note": "222 unit, 22 CDK synthesis"
         }
       ]
     }
