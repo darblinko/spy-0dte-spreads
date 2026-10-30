@@ -197,3 +197,13 @@ def test_metric_publishing_is_limited_to_the_dashboard_namespace(templates):
         s["Condition"] == {"StringEquals": {"cloudwatch:namespace": "Premium/Trading"}}
         for s in statements
     )
+
+
+def test_summary_versions_expire(templates):
+    bucket = next(iter(templates["storage"].find_resources("AWS::S3::Bucket").values()))
+    rules = {r["Id"]: r for r in bucket["Properties"]["LifecycleConfiguration"]["Rules"]}
+    summaries = rules["ExpireSummaries"]
+    assert summaries["ExpirationInDays"] == 365
+    assert summaries["NoncurrentVersionExpiration"]["NoncurrentDays"] == 30
+    assert "Transitions" not in summaries
+    assert rules["RemoveExpiredDeleteMarkers"]["ExpiredObjectDeleteMarker"] is True

@@ -88,7 +88,7 @@ Storage (`cdk/stacks/storage_stack.py`, `src/common/dynamo_io.py`):
 | DynamoDB `premium-positions` | `strategy`, `spread_id` | Point-in-time recovery; retained on stack delete |
 | DynamoDB `premium-trades` | `strategy`, `trade_id` | Point-in-time recovery; retained on stack delete |
 | DynamoDB `premium-market-state` | `date`, `timestamp` | Items expire 30 days after they are written (`ttl_epoch`) |
-| S3 `premium-selling-data-<account id>` | `daily-summaries/<date>.json` | Infrequent Access after 30 days, expire after 365 |
+| S3 `premium-selling-data-<account id>` | `daily-summaries/<date>.json` | Versioned. Current versions expire after 365 days, noncurrent versions 30 days after they are replaced or expire; expired delete markers are removed. Summaries stay in S3 Standard (objects under 128 KB do not transition to Infrequent Access by default) |
 
 ## Quickstart
 

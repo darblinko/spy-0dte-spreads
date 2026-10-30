@@ -25,17 +25,19 @@ class StorageStack(Stack):
             bucket_name=f"premium-selling-data-{self.account}",
             versioned=True,
             removal_policy=RemovalPolicy.RETAIN,
+            # Summaries are a few KB. S3 does not transition objects under 128 KB to
+            # Infrequent Access by default, so they stay in Standard until expiry.
             lifecycle_rules=[
                 s3.LifecycleRule(
-                    id="ArchiveSummaries",
+                    id="ExpireSummaries",
                     prefix="daily-summaries/",
-                    transitions=[
-                        s3.Transition(
-                            storage_class=s3.StorageClass.INFREQUENT_ACCESS,
-                            transition_after=Duration.days(30),
-                        ),
-                    ],
                     expiration=Duration.days(365),
+                    noncurrent_version_expiration=Duration.days(30),
+                ),
+                s3.LifecycleRule(
+                    id="RemoveExpiredDeleteMarkers",
+                    prefix="daily-summaries/",
+                    expired_object_delete_marker=True,
                 ),
             ],
         )
