@@ -21,6 +21,7 @@ cdk = [
     "constructs>=10.0.0",
 ]
 dev = [
+    "moto[dynamodb]>=5.0",
     "numpy>=2.5.3",
     "pytest>=9.1.1",
 ]

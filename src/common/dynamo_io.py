@@ -1,17 +1,25 @@
 """DynamoDB operations for spread positions, trades, and market state."""
 
 import logging
+from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
 
 import boto3
-from boto3.dynamodb.conditions import Key
+from boto3.dynamodb.conditions import Attr, Key
+from botocore.exceptions import ClientError
 
-from .models import SpreadPosition, TradeRecord
+from .models import ACTIVE_STATUSES, SpreadPosition, TradeRecord
 
 logger = logging.getLogger(__name__)
 
 _dynamodb = None
+
+STRATEGIES = ("IC_SPY", "CS_SPY")
+
+
+class PositionConflictError(Exception):
+    """The stored position was created or changed by another writer."""
 
 
 def _get_table(table_name: str):
@@ -60,6 +68,64 @@ def get_positions(table_name: str, strategy: str) -> dict[str, SpreadPosition]:
     return positions
 
 
+def get_position(table_name: str, strategy: str, spread_id: str) -> SpreadPosition | None:
+    """Read one position with a strongly consistent read."""
+    table = _get_table(table_name)
+    response = table.get_item(
+        Key={"strategy": strategy, "spread_id": spread_id}, ConsistentRead=True
+    )
+    item = response.get("Item")
+    return SpreadPosition.from_dynamo_item(item) if item else None
+
+
+def create_position(table_name: str, position: SpreadPosition) -> SpreadPosition:
+    """Insert a new position at version 1.
+
+    Raises PositionConflictError if a position with the same key exists.
+    """
+    created = replace(position, version=1)
+    condition = Attr("spread_id").not_exists()
+    _conditional_put(table_name, created, condition)
+    logger.info(f"Created position: {created.strategy}/{created.spread_id}")
+    return created
+
+
+def save_position(table_name: str, position: SpreadPosition) -> SpreadPosition:
+    """Write a position only if the stored version equals position.version.
+
+    Returns the written position with its version incremented. Raises
+    PositionConflictError if another writer changed the position since it
+    was read, so a stale snapshot never overwrites a newer state.
+    """
+    saved = replace(position, version=position.version + 1)
+    condition = Attr("version").eq(position.version)
+    _conditional_put(table_name, saved, condition)
+    logger.info(f"Saved position: {saved.strategy}/{saved.spread_id} v{saved.version}")
+    return saved
+
+
+def _conditional_put(table_name: str, position: SpreadPosition, condition) -> None:
+    table = _get_table(table_name)
+    item = position.to_dynamo_item()
+    item["strategy"] = position.strategy
+    item["updated_at"] = datetime.now(UTC).isoformat()
+    try:
+        table.put_item(Item=_sanitize_item(item), ConditionExpression=condition)
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+            raise PositionConflictError(f"{position.strategy}/{position.spread_id}") from e
+        raise
+
+
+def get_active_positions(table_name: str, strategies: tuple[str, ...] = STRATEGIES) -> list:
+    """Get positions that may hold contracts or a working order, across strategies."""
+    positions = []
+    for strategy in strategies:
+        stored = get_positions(table_name, strategy).values()
+        positions.extend(p for p in stored if p.status in ACTIVE_STATUSES)
+    return positions
+
+
 def put_position(table_name: str, position: SpreadPosition) -> None:
     """Upsert a spread position."""
     table = _get_table(table_name)
@@ -80,7 +146,7 @@ def delete_position(table_name: str, strategy: str, spread_id: str) -> None:
 def get_all_open_positions(table_name: str) -> list[SpreadPosition]:
     """Get all open positions across all strategies."""
     positions = []
-    for strategy in ["IC_SPY", "CS_SPY"]:
+    for strategy in STRATEGIES:
         strategy_positions = get_positions(table_name, strategy)
         positions.extend(p for p in strategy_positions.values() if p.status == "open")
     return positions

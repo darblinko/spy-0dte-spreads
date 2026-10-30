@@ -21,13 +21,26 @@ class SpreadType(str, Enum):
     CALL_CREDIT_SPREAD = "call_credit_spread"
 
 
+# Shares per standard equity option contract. Quote prices are per share.
+CONTRACT_MULTIPLIER = 100
+
+
 class PositionStatus(str, Enum):
+    PENDING_OPEN = "pending_open"  # entry order submitted, fill not confirmed
+    ENTRY_FAILED = "entry_failed"  # entry order ended without a fill
     OPEN = "open"
+    CLOSING = "closing"  # close order submitted, fill not confirmed
     CLOSED_PROFIT = "closed_profit"
     CLOSED_STOP = "closed_stop"
     CLOSED_EOD = "closed_eod"
     CLOSED_ROLL = "closed_roll"
     CLOSED_MANUAL = "closed_manual"
+
+
+# Statuses whose position may hold contracts or a working order at the broker.
+ACTIVE_STATUSES = frozenset(
+    {PositionStatus.PENDING_OPEN.value, PositionStatus.OPEN.value, PositionStatus.CLOSING.value}
+)
 
 
 @dataclass
@@ -72,8 +85,17 @@ class SpreadPosition:
     stop_loss_price: float = 0.0
     take_profit_price: float = 0.0
 
+    # Number of spreads. Leg quantities are per-spread ratios.
+    quantity: int = 1
+
     # Status
     status: str = PositionStatus.OPEN.value
+    status_time: str = ""  # ISO datetime of the last status change
+    close_reason: str = ""
+    close_client_order_id: str = ""
+
+    # Optimistic lock: incremented by every conditional write
+    version: int = 0
 
     # Market context at entry
     market_regime: str = MarketRegime.UNCERTAIN.value
@@ -98,6 +120,8 @@ class SpreadPosition:
                 continue
             if f.name == "legs":
                 item["legs"] = json.dumps(val)
+            elif f.type is int:
+                item[f.name] = int(val)
             elif isinstance(val, float):
                 item[f.name] = Decimal(str(round(val, 6)))
             elif isinstance(val, (datetime, date)):
@@ -116,6 +140,8 @@ class SpreadPosition:
             val = item[f.name]
             if f.name == "legs":
                 kwargs["legs"] = json.loads(val) if isinstance(val, str) else val
+            elif f.type is int:
+                kwargs[f.name] = int(val)
             elif isinstance(val, Decimal):
                 kwargs[f.name] = float(val)
             else:
@@ -132,7 +158,9 @@ class TradeRecord:
     spread_type: str
     underlying: str
 
-    # Spread details
+    # Spread details. net_credit and close_value are per-spread quote prices;
+    # realized_pnl is in dollars for the whole quantity, before fees.
+    quantity: int = 1
     net_credit: float = 0.0
     close_value: float = 0.0
     realized_pnl: float = 0.0
@@ -155,7 +183,9 @@ class TradeRecord:
             val = getattr(self, f.name)
             if val is None or val == "":
                 continue
-            if isinstance(val, float):
+            if f.type is int:
+                item[f.name] = int(val)
+            elif isinstance(val, float):
                 item[f.name] = Decimal(str(round(val, 6)))
             else:
                 item[f.name] = str(val)
