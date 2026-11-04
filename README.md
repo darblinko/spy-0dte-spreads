@@ -18,7 +18,7 @@ Status: incomplete prototype for a paper trading account (`paper=True` in `src/c
 | Schedules | 4 |
 | Offline tests passing | 244 |
 
-Source: `cdk/app.py`, `cdk/stacks/compute_stack.py`, `cdk/stacks/orchestration_stack.py`, and `pytest tests/unit tests/cdk` at revision `c2b4942`. Chart data: `docs/data.json`.
+Source: `cdk/app.py`, `cdk/stacks/compute_stack.py`, `cdk/stacks/orchestration_stack.py`, and `pytest tests/unit tests/cdk` at revision `7b12c21`. Chart data: `docs/data.json`.
 
 </details>
 
